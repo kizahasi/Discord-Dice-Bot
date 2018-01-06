@@ -1,6 +1,9 @@
 # Discord Dice BOT
 シンプルな機能を持ったダイス機能をDiscordで使えるようにするためのBOTです。このBOTの特徴として、振られたダイスを記録して出力する集計機能があります。
 
+![dice rolls](https://github.com/rasis-aneki/Discord-Dice-Bot/blob/storage/images/dicerolls.gif)
+![scan](https://github.com/rasis-aneki/Discord-Dice-Bot/blob/storage/images/scan.gif)
+
 ## BOTユーザーを自分のDiscordサーバーに追加する
 このダイスBOTは無料サーバーで稼働させており、Discordサーバー管理者なら誰でも追加することができるようになっています。
 
