@@ -1,22 +1,22 @@
 # Discord Dice BOT
 シンプルな機能を持ったダイス機能をDiscordで使えるようにするためのBOTです。このBOTの特徴として、振られたダイスを記録して出力する集計機能があります。
 
-## BOTユーザーを自分のDiscordサーバーに参加させる
-このダイスBOTは無料サーバーで稼働させており、Discordサーバー管理者なら誰でも参加させることができるようになっています。
+## BOTユーザーを自分のDiscordサーバーに追加する
+このダイスBOTは無料サーバーで稼働させており、Discordサーバー管理者なら誰でも追加することができるようになっています。
 
-BOTユーザーを参加させるには、下のリンクをクリックしてください。ただし、そのDiscordサーバーの管理者でないと参加させることはできません。
+BOTユーザーを追加するには、下のリンクをクリックしてください。
 
-https://discordapp.com/oauth2/authorize?&client_id=389035105227767817&scope=bot
+[ダイスBOTをDiscordサーバーに追加する](https://discordapp.com/oauth2/authorize?&client_id=389035105227767817&scope=bot)
 
 ## コマンド
-manual.mdを参照してください。
+[manual.md](/manual.md)を参照してください。
 
-## サーバーでの稼働方法
-**この項目では、サーバーでBOTを動かす方法について説明しています。DiscordでダイスBOTの機能を利用するだけの方は読む必要はありません。**
+## BOTプログラムを動かす
+**自前のサーバーでダイスBOTを動かそうと思っている方以外は、この項目を読んでいただく必要はありません。**
 
 .NET Coreで動作しますので、.NET Core 2.0以降がインストールできる環境であれば、Windows、Mac、Linuxのいずれでも稼働させることができます。
 
-.NET Coreをインストールします。インストール方法はOSごとに異なります。
+まず.NET Coreをインストールしてください。インストール方法はOSごとに異なります。
 
 "DiscordDice.csproj"があるDiscordDiceディレクトリ("DiscordDice.sln"があるディレクトリではありません)に移動し、"tokens.json"という名前のファイルを作成します。ファイルにBOTのトークンを下のようなフォーマットで入力します。BOTがDEBUG構成で動いているときはdebugキーのトークンが、RELEASE構成で動いているときはreleaseキーのトークンが使われます。よくわからなければ両方に同じトークンを入力してください。
 
@@ -33,5 +33,5 @@ manual.mdを参照してください。
 
 
 ## License
-Licensed under the MIT license. See LICENSE.txt for details.
+Licensed under the MIT license. See [LICENSE.txt](LICENSE.txt) for details.
 
