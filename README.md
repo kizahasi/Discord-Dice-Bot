@@ -9,7 +9,7 @@ BOTユーザーを追加するには、下のリンクをクリックしてく�
 [ダイスBOTをDiscordサーバーに追加する](https://discordapp.com/oauth2/authorize?&client_id=389035105227767817&scope=bot)
 
 ## コマンド
-[manual.md](/manual.md)を参照してください。
+[マニュアル](https://github.com/rasis-aneki/Discord-Dice-Bot/blob/storage/manual.md)を参照してください。
 
 ## BOTプログラムを動かす
 **自前のサーバーでダイスBOTを動かそうと思っている方以外は、この項目を読んでいただく必要はありません。**
