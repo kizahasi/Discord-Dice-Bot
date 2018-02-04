@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Net.WebSockets;
 using System.Reactive.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -47,7 +48,16 @@ namespace DiscordDice
             {
                 ConsoleEx.WriteError("Received UnobservedTaskException. The StackTrace is following:");
                 ConsoleEx.WriteError(e.Exception.StackTrace);
-                throw e.Exception;
+                var areExceptionsOk =
+                    ((e.Exception as AggregateException)
+                    ?.InnerExceptions
+                    ?.AsEnumerable()
+                    ?? Enumerable.Empty<Exception>())
+                    .All(ex => ex is WebSocketException);
+                if (areExceptionsOk)
+                {
+                    e.SetObserved();
+                }
             };
 
             try
