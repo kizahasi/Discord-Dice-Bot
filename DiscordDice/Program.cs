@@ -60,9 +60,14 @@ namespace DiscordDice
                 }
             };
 
+            MainCore().Wait();
+        }
+
+        static async Task MainCore()
+        {
             try
             {
-                MainAsync().Wait();
+                await MainAsync();
             }
             catch (AggregateException e)
             {
@@ -70,13 +75,16 @@ namespace DiscordDice
                 {
                     ConsoleEx.WriteError(e.Message);
                 }
-                throw;
             }
             catch (Exception e)
             {
                 ConsoleEx.WriteError(e.Message);
-                throw;
             }
+            Console.WriteLine("Errors have occured. Run again after 10 min...");
+
+            await Task.Delay(10 * 60 * 1000);
+
+            await MainCore();
         }
 
         public static async Task<string> GetTokenAsync()
