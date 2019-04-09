@@ -27,8 +27,8 @@ namespace DiscordDice.BasicMachines
         {
             if (time == null) throw new ArgumentNullException(nameof(time));
 
-            _core = new TimeLimitedMemory<(ulong channelId, ulong scanStartedUserId), Value>(time.TimeLimit, time.WindowOfCheckingTimeLimit, time);
-            _finishedCoreCache = new TimeLimitedMemory<(ulong channelId, ulong scanStartedUserId), Value>(time.CacheTimeLimit, time.WindowOfCheckingTimeLimit, time);
+            _core = new TimeLimitedMemory<(ulong channelId, ulong scanStartedUserId), Value>(time.TimeLimit, time.WindowOfCheckingTimeLimit, time, new ConcurrentDictionaryMemory<(ulong, ulong), (Value, DateTimeOffset)>());
+            _finishedCoreCache = new TimeLimitedMemory<(ulong channelId, ulong scanStartedUserId), Value>(time.CacheTimeLimit, time.WindowOfCheckingTimeLimit, time, new ConcurrentDictionaryMemory<(ulong, ulong), (Value, DateTimeOffset)>());
             _core.Updated
                 .Subscribe(e =>
                 {
@@ -282,6 +282,7 @@ namespace DiscordDice.BasicMachines
             var channelId = await channel.GetIdAsync();
             var rollingPairs =
                 _core
+                .ToEnumerable()
                 .Where(pair =>
                 {
                     var (scanningChannelId, _) = pair.Key;

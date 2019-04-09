@@ -18,17 +18,17 @@ namespace DiscordDice
 
     /// <summary>値が追加されてから一定時間経ったら自動的に削除される辞書。</summary>
     // 値の更新があっても自動的に削除されるまでの時間は変わらない。
-    internal class TimeLimitedMemory<TKey, TValue> : IEnumerable<KeyValuePair<TKey, (TValue, DateTimeOffset)>>
+    internal class TimeLimitedMemory<TKey, TValue>
     {
         readonly IDisposable _subscriptions;
-        // Observable.Interval から操作するので、一応スレッドセーフな ConcurrentDictionary を使っている
-        readonly ConcurrentDictionary<TKey, (TValue, DateTimeOffset)> _core = new ConcurrentDictionary<TKey, (TValue, DateTimeOffset)>();
+        readonly IMemory<TKey, (TValue, DateTimeOffset)> _implementedMemory;
         readonly Subject<TimeLimitedMemoryChangedValue> _updated = new Subject<TimeLimitedMemoryChangedValue>();
         readonly ITime _time;
 
-        public TimeLimitedMemory(TimeSpan timeLimit, TimeSpan windowOfCheckingTimeLimit, ITime time)
+        public TimeLimitedMemory(TimeSpan timeLimit, TimeSpan windowOfCheckingTimeLimit, ITime time, IMemory<TKey, (TValue, DateTimeOffset)> implementedMemory)
         {
             _time = time ?? throw new ArgumentNullException(nameof(time));
+            _implementedMemory = implementedMemory ?? throw new ArgumentNullException(nameof(implementedMemory));
             Updated = _updated.AsObservable();
 
             _subscriptions =
@@ -36,15 +36,16 @@ namespace DiscordDice
                  .Subscribe(_ =>
                  {
                      var now = time.GetUtcNow();
-                     foreach (var pair in _core.ToArray())
+                     Func<TKey, (TValue, DateTimeOffset), bool> predicate = (key, value) =>
                      {
-                         var elapsed = now - pair.Value.Item2;
-                         if (elapsed >= timeLimit)
+                         var elapsed = now - value.Item2;
+                         return elapsed >= timeLimit;
+                     };
+                     if (_implementedMemory.TryRemoveMany(predicate, out var removed))
+                     {
+                         foreach (var pair in removed)
                          {
-                             if (_core.TryRemove(pair.Key, out var removedValue))
-                             {
-                                 _updated.OnNext(TimeLimitedMemoryChangedValue.CreateTimeLimit(pair.Key, removedValue.Item1, removedValue.Item2, _time.GetUtcNow()));
-                             }
+                             _updated.OnNext(TimeLimitedMemoryChangedValue.CreateTimeLimit(pair.Key, pair.Value.Item1, pair.Value.Item2, _time.GetUtcNow()));
                          }
                      }
                  });
@@ -55,29 +56,25 @@ namespace DiscordDice
         public bool TryAdd(TKey key, TValue value)
         {
             var tlValue = (value, _time.GetUtcNow());
-            if (_core.TryAdd(key, tlValue))
-            {
-                return true;
-            }
-            return false;
+            return _implementedMemory.TryAdd(key, tlValue);
         }
 
         public bool TryRemove(TKey key, out TValue value)
         {
-            if (_core.TryRemove(key, out var removedValue))
+            if (_implementedMemory.TryRemove(key, out var removedValue))
             {
                 _updated.OnNext(TimeLimitedMemoryChangedValue.CreateByRemoveMethod(key, removedValue.Item1, removedValue.Item2, _time.GetUtcNow()));
                 value = removedValue.Item1;
                 return true;
             }
-            value = default(TValue);
+            value = default;
             return false;
         }
 
         // Update されたら自動削除時間も更新される
         public (TValue value, DateTimeOffset createdAt) AddOrUpdate(TKey key, TValue value)
         {
-            return _core.AddOrUpdate(key, (value, _time.GetUtcNow()), (_, oldValue) =>
+            return _implementedMemory.AddOrUpdate(key, (value, _time.GetUtcNow()), (_, oldValue) =>
             {
                 // Replaced と言いながら実際には Replacing のタイミングなのはよくない…
                 _updated.OnNext(TimeLimitedMemoryChangedValue.CreateReplaced(key, oldValue.Item1, value, oldValue.Item2, _time.GetUtcNow()));
@@ -85,18 +82,11 @@ namespace DiscordDice
             });
         }
 
-        public bool TryGetValue(TKey key, out (TValue value, DateTimeOffset createdAt) value) => _core.TryGetValue(key, out value);
+        public bool TryGetValue(TKey key, out (TValue value, DateTimeOffset createdAt) value) => _implementedMemory.TryGetValue(key, out value);
 
-        public IEnumerator<KeyValuePair<TKey, (TValue, DateTimeOffset)>> GetEnumerator()
-        {
-            return _core.ToArray().AsEnumerable().GetEnumerator();
-        }
+        public IEnumerable<KeyValuePair<TKey, (TValue, DateTimeOffset)>> ToEnumerable() => _implementedMemory.ToEnumerable();
 
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            IEnumerable core = _core.ToArray();
-            return core.GetEnumerator();
-        }
+        public IQueryable<KeyValuePair<TKey, (TValue, DateTimeOffset)>> ToQueryable() => _implementedMemory.ToQueryable();
 
         public class TimeLimitedMemoryChangedValue
         {
