@@ -76,13 +76,19 @@ namespace DiscordDice.Commands
             return GetBodies().Contains(command.Body);
         }
 
-        protected abstract Task<Response> InvokeCoreAsync(ILazySocketMessageChannel channel, ILazySocketUser user);
+        protected abstract Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user);
 
-        public async Task<Response> InvokeAsync(RawCommand command, ILazySocketMessageChannel channel, ILazySocketUser user)
+        public async Task<Response> InvokeAsync(RawCommand command, ILazySocketClient client, ulong channelId, ulong userId)
         {
-            if (channel == null) throw new ArgumentNullException(nameof(channel));
-            if (user == null) throw new ArgumentNullException(nameof(user));
+            if (client == null) throw new ArgumentNullException(nameof(client));
 
+            var channel = await client.TryGetMessageChannelAsync(channelId);
+            var user = await client.TryGetUserAsync(userId);
+
+            if(channel == null || user == null)
+            {
+                return Response.None;
+            }
             if (command == null)
             {
                 return Response.None;
@@ -98,19 +104,19 @@ namespace DiscordDice.Commands
                 var found = (Options ?? new CommandOption[] { }).FirstOrDefault(option => option.Keys.Contains(pair.Key));
                 if (found == null)
                 {
-                    return Response.CreateCaution(Texts.Error.Commands.Options.ContainsNotSupportedOption(pair.Key), channel, user);
+                    return await Response.TryCreateCautionAsync(client, Texts.Error.Commands.Options.ContainsNotSupportedOption(pair.Key), channelId, userId) ?? Response.None;
                 }
                 if(!usedCommand.Add(found))
                 {
-                    return Response.CreateCaution("同じ意味のオプションが複数あります。", channel, user);
+                    return await Response.TryCreateCautionAsync(client, "同じ意味のオプションが複数あります。", channelId, userId);
                 }
                 var result = found.SetValue(pair.Key, pair.Value);
                 if (!result.HasValue)
                 {
-                    return Response.CreateCaution(result.Error ?? $"{pair.Key} の値としてサポートしていない形式が使われています。", channel, user);
+                    return await Response.TryCreateCautionAsync(client, result.Error ?? $"{pair.Key} の値としてサポートしていない形式が使われています。", channelId, userId);
                 }
             }
-            return await InvokeCoreAsync(channel, user) ?? Response.None;
+            return await InvokeCoreAsync(client, channel, user) ?? Response.None;
         }
 
         // null の場合はヘルプに含まれない。
@@ -125,9 +131,9 @@ namespace DiscordDice.Commands
         // ここにヘルプメッセージをセットして使う。このような仕様になってしまったのは、「HelpCommand にはヘルプメッセージが必要」と「ヘルプメッセージ作成には全てのコマンドが必要」の循環参照のせい。
         public Func<string> HelpMessage { get; set; }
 
-        protected override Task<Response> InvokeCoreAsync(ILazySocketMessageChannel channel, ILazySocketUser user)
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
-            return Task.FromResult(Response.CreateSay($"```{HelpMessage()}```", channel));
+            return await Response.TryCreateSayAsync(client, $"```{HelpMessage()}```", await channel.GetIdAsync());
         }
 
         public override string HelpText => $"{Texts.BotName} のヘルプを表示します。";
@@ -138,9 +144,9 @@ namespace DiscordDice.Commands
         public override string Body => "version";
         public override IReadOnlyCollection<string> BodyAliases => new[] { "-v", "--version" };
 
-        protected override Task<Response> InvokeCoreAsync(ILazySocketMessageChannel channel, ILazySocketUser user)
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
-            return Task.FromResult(Response.CreateSay($"version {Texts.Version}", channel));
+            return await Response.TryCreateSayAsync(client, $"version {Texts.Version}", await channel.GetIdAsync());
         }
 
         public override string HelpText => $"{Texts.BotName} のバージョンを表示します。";
@@ -170,7 +176,7 @@ scan-end コマンドは scan-start コマンドを実行したユーザーと�
 ダイスの値が同じユーザーが複数いる場合、乱数によって自動的にタイブレークが行われます。
 scan-end コマンドが実行されないまま長い時間が経過した場合、集計は自動的にキャンセルされます。";
 
-        protected override async Task<Response> InvokeCoreAsync(ILazySocketMessageChannel channel, ILazySocketUser user)
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
             var dice = _diceOption.Value ?? Expr.Main.Interpret("1d100");
             var maxSize = _maxSizeOption.Value ?? int.MaxValue;
@@ -227,9 +233,9 @@ scan-end コマンドが実行されないまま長い時間が経過した場�
 
         public override string HelpText => "自身が行っているもしくは行ったダイスの集計の途中経過を表示します。";
 
-        protected override async Task<Response> InvokeCoreAsync(ILazySocketMessageChannel channel, ILazySocketUser user)
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
-            await _scanMachine.GetCurrentProgressOrCachedProgress(channel, user, _shuffledOption.HasOption);
+            await _scanMachine.GetCurrentOrCachedProgressAsync(channel, user, _shuffledOption.HasOption);
             return Response.None;
         }
 
@@ -257,17 +263,17 @@ scan-end コマンドが実行されないまま長い時間が経過した場�
 
         public override string HelpText => @"自身が行っているダイスの集計を終了します。";
 
-        protected override async Task<Response> InvokeCoreAsync(ILazySocketMessageChannel channel, ILazySocketUser user)
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
             var noResult = _noResultOption.HasOption;
 
             if (noResult)
             {
-                await _scanMachine.AbortAsync(channel, user);
+                await _scanMachine.AbortAsync(await channel.GetIdAsync(), await user.GetIdAsync());
             }
             else
             {
-                await _scanMachine.EndAsync(channel, user);
+                await _scanMachine.EndAsync(await channel.GetIdAsync(), await user.GetIdAsync());
             }
             return Response.None;
         }

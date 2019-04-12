@@ -15,6 +15,7 @@ namespace DiscordDice.BasicMachines
 {
     internal sealed class ScanMachine
     {
+        readonly ILazySocketClient _client;
         // _core から削除されたものは、_finishedCoreCache に追加(or上書き)される。
         // _finishedCoreCache が存在する理由は、scanの終了後にシャッフルして再表示させる、あるいは単に再表示させるため。
         // TimeLimitedMemory の仕様を変更するのも面倒なので TimeLimitedMemory を 2 個用いている。
@@ -23,14 +24,15 @@ namespace DiscordDice.BasicMachines
 
         readonly Subject<Response> _sentResponse = new Subject<Response>();
 
-        public ScanMachine(ITime time)
+        public ScanMachine(ILazySocketClient client, ITime time)
         {
+            _client = client ?? throw new ArgumentNullException(nameof(client));
             if (time == null) throw new ArgumentNullException(nameof(time));
 
             _core = new TimeLimitedMemory<(ulong channelId, ulong scanStartedUserId), Value>(time.TimeLimit, time.WindowOfCheckingTimeLimit, time, new ConcurrentDictionaryMemory<(ulong, ulong), (Value, DateTimeOffset)>());
             _finishedCoreCache = new TimeLimitedMemory<(ulong channelId, ulong scanStartedUserId), Value>(time.CacheTimeLimit, time.WindowOfCheckingTimeLimit, time, new ConcurrentDictionaryMemory<(ulong, ulong), (Value, DateTimeOffset)>());
             _core.Updated
-                .Subscribe(e =>
+                .Subscribe(async e =>
                 {
                     if (e.Type != TimeLimitedMemoryChangedType.Replaced)
                     {
@@ -38,7 +40,7 @@ namespace DiscordDice.BasicMachines
                     }
                     if (e.Type == TimeLimitedMemoryChangedType.TimeLimit)
                     {
-                        Respond(e.OldValue, RespondType.ByTimeLimit);
+                        await RespondAsync(e.OldValue, e.Key.channelId, e.Key.scanStartedUserId, RespondType.ByTimeLimit);
                     }
                 });
             SentResponse = _sentResponse.Where(r => r != null);
@@ -69,7 +71,7 @@ namespace DiscordDice.BasicMachines
             return false;
         }
 
-        private void Respond(Value value, RespondType type)
+        private async Task RespondAsync(Value value, ulong channelId, ulong scanStartedUserId, RespondType type)
         {
             if (value == null)
             {
@@ -78,7 +80,7 @@ namespace DiscordDice.BasicMachines
 
             if (type == RespondType.Aborted)
             {
-                RespondBySay($"{value.WatchingExpr.ToString()} の集計は停止されました。", value.Channel, value.ScanStartedUser);
+                await RespondBySayAsync($"{value.WatchingExpr.ToString()} の集計は停止されました。", channelId, scanStartedUserId);
                 return;
             }
 
@@ -111,175 +113,133 @@ namespace DiscordDice.BasicMachines
                 })
                 .Append("```")
                 .ToString();
-            RespondBySay(text, value.Channel, value.ScanStartedUser);
+            await RespondBySayAsync(text, channelId, scanStartedUserId);
         }
 
-        private void RespondBySay(string text, ILazySocketMessageChannel channel, ILazySocketUser replyTo = null)
+        private async Task RespondBySayAsync(string text, ulong channelId, ulong? userIdOfReplyTo = null)
         {
-            if (channel == null)
+            var response = await Response.TryCreateSayAsync(_client, text, channelId, userIdOfReplyTo);
+            if (response == null)
             {
-                throw new ArgumentNullException(nameof(channel));
+                return;
             }
-
-            var response = Response.CreateSay(text, channel, replyTo);
             _sentResponse.OnNext(response);
         }
 
-        private void RespondByCaution(ILazySocketMessageChannel channel, string text, ILazySocketUser replyTo = null)
+        private async Task RespondByCautionAsync(string text, ulong channelId, ulong? userIdOfReplyTo = null)
         {
-            if (channel == null)
+            var response = await Response.TryCreateCautionAsync(_client, text, channelId, userIdOfReplyTo);
+            if (response == null)
             {
-                throw new ArgumentNullException(nameof(channel));
+                return;
             }
-
-            var response = Response.CreateCaution(text, channel, replyTo);
             _sentResponse.OnNext(response);
+        }
+
+        public async Task StartAsync(ulong channelId, ulong userId, bool force, Expr.Main expr, int maxSize, bool noProgress)
+        {
+            var key = (channelId, userId);
+            var value = new Value(expr, maxSize, noProgress);
+            if (force)
+            {
+                await EndAsync(channelId, userId, true);
+            }
+            if (_core.TryAdd(key, value))
+            {
+                await RespondBySayAsync($"{expr.ToString()} の集計が開始されました。", channelId, userId);
+            }
+            else
+            {
+                await RespondByCautionAsync("すでに別の集計が行われています。", channelId, userId);
+            }
         }
 
         public async Task StartAsync(ILazySocketMessageChannel channel, ILazySocketUser user, bool force, Expr.Main expr, int maxSize, bool noProgress)
         {
-            if (channel == null)
-            {
-                throw new ArgumentNullException(nameof(channel));
-            }
-            if (user == null)
-            {
-                throw new ArgumentNullException(nameof(user));
-            }
-
-            var key = (await channel.GetIdAsync(), await user.GetIdAsync());
-            var value = new Value(channel, user, expr, maxSize, noProgress);
-            if (force)
-            {
-                await EndAsync(channel, user, true);
-            }
-            if (_core.TryAdd(key, value))
-            {
-                RespondBySay($"{expr.ToString()} の集計が開始されました。", channel, user);
-            }
-            else
-            {
-                RespondByCaution(channel, "すでに別の集計が行われています。", user);
-            }
+            if (channel == null) throw new ArgumentNullException(nameof(channel));
+            if (user == null) throw new ArgumentNullException(nameof(user));
+            await StartAsync(await channel.GetIdAsync(), await user.GetIdAsync(), force, expr, maxSize, noProgress);
         }
 
-        public async Task GetCurrentProgressOrCachedProgress(ILazySocketMessageChannel channel, ILazySocketUser user, bool shuffled)
+        public async Task GetCurrentOrCachedProgressAsync(ulong channelId, ulong userId, bool shuffled)
         {
-            if (channel == null)
-            {
-                throw new ArgumentNullException(nameof(channel));
-            }
-            if (user == null)
-            {
-                throw new ArgumentNullException(nameof(user));
-            }
-
-            var key = (await channel.GetIdAsync(), await user.GetIdAsync());
+            var key = (channelId, userId);
             if (_core.TryGetValue(key, out var value))
             {
-                Respond(value.value, shuffled ? RespondType.ShuffledShow : RespondType.Show);
+                await RespondAsync(value.value, channelId, userId, shuffled ? RespondType.ShuffledShow : RespondType.Show);
             }
             else
             {
                 if (_finishedCoreCache.TryGetValue(key, out var cache))
                 {
-                    Respond(cache.value, shuffled ? RespondType.ShuffledShow : RespondType.Show);
+                    await RespondAsync(cache.value, channelId, userId, shuffled ? RespondType.ShuffledShow : RespondType.Show);
                 }
                 else
                 {
-                    RespondByCaution(channel, "集計が見つかりません。", user);
+                    await RespondByCautionAsync("集計が見つかりません。", channelId, userId);
                 }
             }
         }
 
-        public async Task GetCachedProgressOrCurrentProgress(ILazySocketMessageChannel channel, ILazySocketUser user, bool shuffled)
+        public async Task GetCurrentOrCachedProgressAsync(ILazySocketMessageChannel channel, ILazySocketUser user, bool shuffled)
         {
-            if (channel == null)
-            {
-                throw new ArgumentNullException(nameof(channel));
-            }
-            if (user == null)
-            {
-                throw new ArgumentNullException(nameof(user));
-            }
+            if (channel == null) throw new ArgumentNullException(nameof(channel));
+            if (user == null) throw new ArgumentNullException(nameof(user));
 
-            var key = (await channel.GetIdAsync(), await user.GetIdAsync());
+            await GetCurrentOrCachedProgressAsync(await channel.GetIdAsync(), await user.GetIdAsync(), shuffled);
+        }
+
+        public async Task GetCachedOrCurrentProgressAsync(ulong channelId, ulong userId, bool shuffled)
+        {
+            var key = (channelId, userId);
             if (_finishedCoreCache.TryGetValue(key, out var cache))
             {
-                Respond(cache.value, shuffled ? RespondType.ShuffledShow : RespondType.Show);
+                await RespondAsync(cache.value, channelId, userId, shuffled ? RespondType.ShuffledShow : RespondType.Show);
             }
             else
             {
                 if (_core.TryGetValue(key, out var value))
                 {
-                    Respond(value.value, shuffled ? RespondType.ShuffledShow : RespondType.Show);
+                    await RespondAsync(value.value, channelId, userId, shuffled ? RespondType.ShuffledShow : RespondType.Show);
                 }
                 else
                 {
-                    RespondByCaution(channel, "集計が見つかりません。", user);
+                    await RespondByCautionAsync("集計が見つかりません。", channelId, userId);
                 }
             }
         }
 
-        public async Task AbortAsync(ILazySocketMessageChannel channel, ILazySocketUser user)
+        public async Task AbortAsync(ulong channelId, ulong userId)
         {
-            if (channel == null)
-            {
-                throw new ArgumentNullException(nameof(channel));
-            }
-            if (user == null)
-            {
-                throw new ArgumentNullException(nameof(user));
-            }
-
-            var key = (await channel.GetIdAsync(), await user.GetIdAsync());
+            var key = (channelId, userId);
             if (TryRemoveAndCache(key, out var value))
             {
-                Respond(value, RespondType.Aborted);
+                await RespondAsync(value, channelId, userId, RespondType.Aborted);
             }
             else
             {
-                RespondByCaution(channel, "集計は行われていません。", user);
+                await RespondByCautionAsync("集計が見つかりません。", channelId, userId);
             }
         }
 
-        public async Task EndAsync(ILazySocketMessageChannel channel, ILazySocketUser scanStartedUser, bool suppressNotFoundResponse = false)
+        public async Task EndAsync(ulong channelId, ulong userId, bool suppressNotFoundResponse = false)
         {
-            if (channel == null)
-            {
-                throw new ArgumentNullException(nameof(channel));
-            }
-            if (scanStartedUser == null)
-            {
-                throw new ArgumentNullException(nameof(scanStartedUser));
-            }
-
-            var key = (await channel.GetIdAsync(), await scanStartedUser.GetIdAsync());
+            var key = (channelId, userId);
             if (TryRemoveAndCache(key, out var value))
             {
-                Respond(value, RespondType.Ended);
+                await RespondAsync(value, channelId, userId, RespondType.Ended);
             }
             else
             {
                 if (!suppressNotFoundResponse)
                 {
-                    RespondByCaution(channel, "集計は行われていません。", scanStartedUser);
+                    await RespondByCautionAsync("集計は行われていません。", channelId, userId);
                 }
             }
         }
 
-        public async Task SetDiceAsync(ILazySocketMessageChannel channel, ILazySocketUser rollingUser, Expr.Main.Executed executedExpr)
+        public async Task SetDiceAsync(ulong channelId, ulong rollingUserId, Expr.Main.Executed executedExpr)
         {
-            if (channel == null)
-            {
-                throw new ArgumentNullException(nameof(channel));
-            }
-            if (rollingUser == null)
-            {
-                throw new ArgumentNullException(nameof(rollingUser));
-            }
-
-            var channelId = await channel.GetIdAsync();
             var rollingPairs =
                 _core
                 .ToEnumerable()
@@ -295,15 +255,15 @@ namespace DiscordDice.BasicMachines
                 {
                     continue;
                 }
-                await value.TrySetAsync(rollingUser, executedExpr);
+                await value.TrySetAsync(_client, rollingUserId, executedExpr);
                 if (value.RolledDicesCount >= value.MaxSize)
                 {
-                    await EndAsync(channel, value.ScanStartedUser);
+                    await EndAsync(channelId, pair.Key.scanStartedUserId);
                     return;
                 }
                 if (!value.NoProgress)
                 {
-                    Respond(value, RespondType.TochuuKeika);
+                    await RespondAsync(value, channelId, pair.Key.scanStartedUserId, RespondType.TochuuKeika);
                 }
             }
         }
@@ -324,6 +284,24 @@ namespace DiscordDice.BasicMachines
 
                 var result = new User();
                 result.UserId = await user.GetIdAsync();
+                result.Username = await user.GetUsernameAsync();
+                return result;
+            }
+
+            public static async Task<User> TryCreateAsync(ILazySocketClient client, ulong userId)
+            {
+                if (client == null)
+                {
+                    throw new ArgumentNullException(nameof(client));
+                }
+
+                var user = await client.TryGetUserAsync(userId);
+                if (user == null)
+                {
+                    return null;
+                }
+                var result = new User();
+                result.UserId = userId;
                 result.Username = await user.GetUsernameAsync();
                 return result;
             }
@@ -377,21 +355,17 @@ namespace DiscordDice.BasicMachines
             private readonly Dictionary<int, List<User>> _rolledDices = new Dictionary<int, List<User>>();
             private readonly object _gate = new object();
 
-            public Value(ILazySocketMessageChannel channel, ILazySocketUser scanStartedUser, Expr.Main expr, int maxSize, bool noProgress)
+            public Value(Expr.Main expr, int maxSize, bool noProgress)
             {
-                Channel = channel ?? throw new ArgumentNullException(nameof(channel));
-                ScanStartedUser = scanStartedUser ?? throw new ArgumentNullException(nameof(scanStartedUser));
                 WatchingExpr = expr ?? throw new ArgumentNullException(nameof(expr));
                 MaxSize = maxSize;
                 NoProgress = noProgress;
             }
 
-            public ILazySocketMessageChannel Channel { get; }
-            public ILazySocketUser ScanStartedUser { get; }
             public Expr.Main WatchingExpr { get; }
             public int MaxSize { get; }
             public bool NoProgress { get; }
-            
+
             private bool ContainsUser(User user)
             {
                 return
@@ -406,15 +380,15 @@ namespace DiscordDice.BasicMachines
                 source.Insert(index, item);
             }
 
-            public async Task<bool> TrySetAsync(ILazySocketUser user, Expr.Main.Executed executedExpr)
+            public async Task<bool> TrySetAsync(ILazySocketClient client, ulong userId, Expr.Main.Executed executedExpr)
             {
-                if (user == null)
+                if (client == null)
                 {
-                    throw new ArgumentNullException(nameof(user));
+                    throw new ArgumentNullException(nameof(client));
                 }
 
-                var userValue = await User.CreateAsync(user);
-                if (ContainsUser(userValue))
+                var userValue = await User.TryCreateAsync(client, userId);
+                if (userValue == null || ContainsUser(userValue))
                 {
                     return false;
                 }
@@ -454,11 +428,14 @@ namespace DiscordDice.BasicMachines
 
     internal sealed class AllInstances
     {
-        public AllInstances(ITime time)
+        public AllInstances(ILazySocketClient client, ITime time)
         {
-            Scan = new ScanMachine(time ?? throw new ArgumentNullException(nameof(time)));
-            SentResponse =
-                Scan.SentResponse;
+            if (client == null)
+            {
+                throw new ArgumentNullException(nameof(client));
+            }
+            Scan = new ScanMachine(client, time ?? throw new ArgumentNullException(nameof(time)));
+            SentResponse = Scan.SentResponse;
         }
 
         public IObservable<Response> SentResponse { get; }

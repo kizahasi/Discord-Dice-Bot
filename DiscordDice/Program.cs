@@ -39,9 +39,6 @@ namespace DiscordDice
 
     class Program
     {
-        static DiscordSocketClient client;
-        static MessageEntrance entrance = new MessageEntrance(Time.Default);
-
         static void Main(string[] args)
         {
             TaskScheduler.UnobservedTaskException += (sender, e) =>
@@ -133,11 +130,19 @@ namespace DiscordDice
             }
             Console.WriteLine("Starting...");
 
-            client = new DiscordSocketClient();
+            var client = new DiscordSocketClient();
 
             client.Log += OnLog;
-            client.MessageReceived += OnMessageReceived;
-            ResponsesSender.Start(entrance.ResponseSent);
+            client.Ready += () =>
+            {
+                var entrance = new MessageEntrance(new LazySocketClient(client), Time.Default);
+                ResponsesSender.Start(entrance.ResponseSent);
+                client.MessageReceived += async message =>
+                {
+                    await entrance.ReceiveMessageAsync(new LazySocketMessage(message), client.CurrentUser.Id);
+                };
+                return Task.CompletedTask;
+            };
 
             var token = await GetTokenAsync();
             Console.WriteLine("Logging in...");
@@ -151,15 +156,10 @@ namespace DiscordDice
             await Task.Delay(-1);
         }
 
-        private static async Task OnLog(LogMessage msg)
+        private static Task OnLog(LogMessage msg)
         {
             Console.WriteLine(msg.ToString());
-            await Task.Delay(0);
-        }
-
-        private static async Task OnMessageReceived(SocketMessage message)
-        {
-            await entrance.OnNextAsync(new LazySocketMessage(message), client.CurrentUser.Id);
+            return Task.CompletedTask;
         }
     }
 }

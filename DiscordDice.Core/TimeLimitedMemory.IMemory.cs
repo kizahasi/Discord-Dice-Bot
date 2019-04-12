@@ -53,4 +53,42 @@ namespace DiscordDice
             return true;
         }
     }
+
+    internal class SqliteMemory<TKey, TValue> : IMemory<TKey, TValue>
+    {
+        public TValue AddOrUpdate(TKey key, TValue value, Func<TKey, TValue, TValue> updateValueFactory)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IEnumerable<KeyValuePair<TKey, TValue>> ToEnumerable()
+        {
+            throw new NotImplementedException();
+        }
+
+        public IQueryable<KeyValuePair<TKey, TValue>> ToQueryable()
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool TryAdd(TKey key, TValue value)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool TryGetValue(TKey key, out TValue value)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool TryRemove(TKey key, out TValue removed)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool TryRemoveMany(Func<TKey, TValue, bool> predicate, out IReadOnlyDictionary<TKey, TValue> removed)
+        {
+            throw new NotImplementedException();
+        }
+    }
 }
