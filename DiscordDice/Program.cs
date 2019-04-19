@@ -22,7 +22,7 @@ using System.Threading.Tasks;
  */
 namespace DiscordDice
 {
-    public static class Configuration
+    internal static class Configuration
     {
         public static bool IsDebug
         {
@@ -39,7 +39,7 @@ namespace DiscordDice
 
     class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             TaskScheduler.UnobservedTaskException += (sender, e) =>
             {
@@ -59,14 +59,14 @@ namespace DiscordDice
                 }
             };
 
-            MainCore().Wait();
+            await MainLoop();
         }
 
-        static async Task MainCore()
+        static async Task MainLoop()
         {
             try
             {
-                await MainAsync();
+                await ConnectDiscordAsync();
             }
             catch (AggregateException e)
             {
@@ -83,7 +83,7 @@ namespace DiscordDice
 
             await Task.Delay(10 * 60 * 1000);
 
-            await MainCore();
+            await MainLoop();
         }
 
         public static async Task<string> GetTokenAsync()
@@ -120,7 +120,7 @@ namespace DiscordDice
             throw new DiscordDiceException(invalidJsonMessage);
         }
 
-        static async Task MainAsync()
+        static async Task ConnectDiscordAsync()
         {
             if (Configuration.IsDebug)
             {
