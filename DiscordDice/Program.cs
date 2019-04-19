@@ -44,6 +44,8 @@ namespace DiscordDice
             TaskScheduler.UnobservedTaskException += (sender, e) =>
             {
                 ConsoleEx.WriteError("Received UnobservedTaskException. The StackTrace is following:");
+                ConsoleEx.WriteError(e.Exception.GetType().ToString());
+                ConsoleEx.WriteError(e.Exception.Message);
                 ConsoleEx.WriteError(e.Exception.StackTrace);
                 var areExceptionsOk =
                     ((e.Exception as AggregateException)
@@ -128,6 +130,12 @@ namespace DiscordDice
             {
                 Console.WriteLine("Configuration is RELEASE.");
             }
+            using (var context = MainDbContext.GetInstance(Config.Default))
+            {
+                Console.WriteLine("Ensuring database is created...");
+                await context.Database.EnsureCreatedAsync();
+                Console.WriteLine("Ensured database is created.");
+            }
             Console.WriteLine("Starting...");
 
             var client = new DiscordSocketClient();
@@ -135,7 +143,7 @@ namespace DiscordDice
             client.Log += OnLog;
             client.Ready += () =>
             {
-                var entrance = new MessageEntrance(new LazySocketClient(client), Time.Default);
+                var entrance = new MessageEntrance(new LazySocketClient(client), Config.Default);
                 ResponsesSender.Start(entrance.ResponseSent);
                 client.MessageReceived += async message =>
                 {

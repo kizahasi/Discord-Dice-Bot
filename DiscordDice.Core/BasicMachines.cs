@@ -6,6 +6,8 @@ using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using System.Reactive;
 
 // 低レイヤーな処理を行うクラスの集合。
 // 少し複雑(例えば内部状態を持つなど)な処理に向いている。単純すぎる処理はここに書くメリットは薄い。
@@ -16,34 +18,70 @@ namespace DiscordDice.BasicMachines
     internal sealed class ScanMachine
     {
         readonly ILazySocketClient _client;
-        // _core から削除されたものは、_finishedCoreCache に追加(or上書き)される。
-        // _finishedCoreCache が存在する理由は、scanの終了後にシャッフルして再表示させる、あるいは単に再表示させるため。
-        // TimeLimitedMemory の仕様を変更するのも面倒なので TimeLimitedMemory を 2 個用いている。
-        readonly TimeLimitedMemory<(ulong channelId, ulong scanStartedUserId), Value> _core;
-        readonly TimeLimitedMemory<(ulong channelId, ulong scanStartedUserId), Value> _finishedCoreCache;
-
         readonly Subject<Response> _sentResponse = new Subject<Response>();
+        readonly IConfig _config;
+        DateTimeOffset _lastUpdatedScans = DateTimeOffset.MinValue;
 
-        public ScanMachine(ILazySocketClient client, ITime time)
+        public ScanMachine(ILazySocketClient client, IConfig config)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
-            if (time == null) throw new ArgumentNullException(nameof(time));
+            _config = config ?? throw new ArgumentNullException(nameof(config));
 
-            _core = new TimeLimitedMemory<(ulong channelId, ulong scanStartedUserId), Value>(time.TimeLimit, time.WindowOfCheckingTimeLimit, time, new ConcurrentDictionaryMemory<(ulong, ulong), (Value, DateTimeOffset)>());
-            _finishedCoreCache = new TimeLimitedMemory<(ulong channelId, ulong scanStartedUserId), Value>(time.CacheTimeLimit, time.WindowOfCheckingTimeLimit, time, new ConcurrentDictionaryMemory<(ulong, ulong), (Value, DateTimeOffset)>());
-            _core.Updated
-                .Subscribe(async e =>
-                {
-                    if (e.Type != TimeLimitedMemoryChangedType.Replaced)
-                    {
-                        _finishedCoreCache.AddOrUpdate(e.Key, e.OldValue);
-                    }
-                    if (e.Type == TimeLimitedMemoryChangedType.TimeLimit)
-                    {
-                        await RespondAsync(e.OldValue, e.Key.channelId, e.Key.scanStartedUserId, RespondType.ByTimeLimit);
-                    }
-                });
             SentResponse = _sentResponse.Where(r => r != null);
+        }
+
+        /* 
+         * データベースのScansをアップデートできる状態かどうかを見て、できる状態ならアップデートする。
+         * アップデートできる状態かどうかを見る処理は重くないため、（よほど大量でなければ）多めに実行しても構わない。
+         * 
+         * - Observable.IntervalなどからこのTryUpdateScansAsync()を実行すれば楽に書けそうだが、Discord.NETのイベントから実行している理由
+         * Observable.Intervalは（工夫しなければ）別のスレッドから実行されるので、とあるスレッドがMainDbContextを操作している際に別のスレッドがMainDbContextを操作しようとすることが起こり得る。これが起こると、IOExceptionが投げられてしまう。
+         * これを回避するにはlockを使うという手もあるが、処理が重くなるという欠点がある。
+         * そこで、TryUpdateScansAsync()（およびこのScanMachineのpublicメソッド全て）を全てDiscordのイベントから呼び出すことで、衝突を回避している。この方法の欠点はDiscord.NETのイベントの発火の頻度が少ないほどチェックのタイミングが不正確になることだが、別に正確性を求める処理ではないのであまり問題はない。
+         */
+        public async Task TryUpdateScansAsync()
+        {
+            var utcNow = _config.GetUtcNow();
+            if (utcNow - _lastUpdatedScans >= _config.IntervalOfUpdatingScans)
+            {
+                _lastUpdatedScans = utcNow;
+                await UpdateScansAsync();
+            }
+        }
+
+        private async Task UpdateScansAsync()
+        {
+            var utcNow = _config.GetUtcNow();
+            using (var context = new MainDbContext(_config))
+            {
+                var archiving = await
+                    context.Scans
+                    .Where(s => !s.IsArchived)
+                    .Where(s => utcNow - s.StartedAt >= _config.TimeToMakeScanArchived)
+                    .Include(s => s.ScanRolls)
+                    .ThenInclude(s => s.User)
+                    .ToArrayAsync();
+                foreach (var a in archiving)
+                {
+                    a.IsArchived = true;
+                    if (ulong.TryParse(a.ChannelID, out var channelID) && ulong.TryParse(a.ScanStartedUserID, out var scanStartedUserID))
+                    {
+                        await RespondAsync(new Value(a), channelID, scanStartedUserID, RespondType.ByTimeLimit);
+                    }
+                }
+
+                var removing =
+                    await
+                    context.Scans
+                    .Where(s => s.IsArchived)
+                    .Where(s => utcNow - s.StartedAt >= _config.TimeToMakeScanRemoved)
+                    .ToArrayAsync();
+                foreach (var r in removing)
+                {
+                    context.Scans.Remove(r);
+                }
+                await context.SaveChangesAsync();
+            }
         }
 
         public IObservable<Response> SentResponse { get; }
@@ -58,17 +96,28 @@ namespace DiscordDice.BasicMachines
             ByTimeLimit,
         }
 
-        private bool TryRemoveAndCache((ulong channelId, ulong scanStartedUserId) key, out Value value)
+        private async Task<IReadOnlyList<Value>> TryArchiveAsync(ulong channelId, ulong scanStartedUserId)
         {
-            if (_core.TryRemove((key.channelId, key.scanStartedUserId), out var v))
+            IReadOnlyList<Value> result;
+            using (var context = new MainDbContext(_config))
             {
-                _finishedCoreCache.AddOrUpdate(key, v);
-                value = v;
-                return true;
+                var archiving =
+                    await
+                    context.Scans
+                    .Where(s => !s.IsArchived)
+                    .Where(s => s.ChannelID == channelId.ToString())
+                    .Where(s => s.ScanStartedUserID == scanStartedUserId.ToString())
+                    .Include(s => s.ScanRolls)
+                    .ThenInclude(s => s.User)
+                    .ToArrayAsync();
+                foreach (var a in archiving)
+                {
+                    a.IsArchived = true;
+                }
+                result = archiving.Select(a => new Value(a)).ToArray().ToReadOnly();
+                await context.SaveChangesAsync();
             }
-
-            value = default;
-            return false;
+            return result;
         }
 
         private async Task RespondAsync(Value value, ulong channelId, ulong scanStartedUserId, RespondType type)
@@ -101,13 +150,13 @@ namespace DiscordDice.BasicMachines
             var firstLine = $"```{value.WatchingExpr.ToString()} の集計結果{infoText}:";
             var text =
                 value
-                .GetRolledDices()
+                .Ranking
                 .Shuffle(type == RespondType.ShuffledShow)
                 .Aggregate(new StringBuilder(firstLine), (resultBuilder, tuple) =>
                 {
                     resultBuilder.Append("\r\n");
-                    var (rank, user, rolledDice) = tuple;
-                    var appending = $"{String.Format("{0:D2}", rank + 1)}位 - {user.Username}({rolledDice})";
+                    var (rank, userID, userName, rolledDice) = tuple;
+                    var appending = $"{String.Format("{0:D2}", rank + 1)}位 - {userName}({rolledDice})";
                     resultBuilder.Append(appending);
                     return resultBuilder;
                 })
@@ -136,305 +185,240 @@ namespace DiscordDice.BasicMachines
             _sentResponse.OnNext(response);
         }
 
-        public async Task StartAsync(ulong channelId, ulong userId, bool force, Expr.Main expr, int maxSize, bool noProgress)
+        public async Task StartAsync(ulong channelId, ulong userId, string username, bool force, Expr.Main expr, int maxSize, bool noProgress)
         {
-            var key = (channelId, userId);
-            var value = new Value(expr, maxSize, noProgress);
             if (force)
             {
                 await EndAsync(channelId, userId, true);
             }
-            if (_core.TryAdd(key, value))
+            using (var context = new MainDbContext(_config))
             {
-                await RespondBySayAsync($"{expr.ToString()} の集計が開始されました。", channelId, userId);
+                var scan =
+                    await
+                    context.Scans
+                    .Where(s => !s.IsArchived)
+                    .FirstOrDefaultAsync(s => s.ChannelID == channelId.ToString() && s.ScanStartedUserID == userId.ToString());
+                if (scan == null)
+                {
+                    await AddOrUpdateUserAsync(context, userId, username);
+                    var newScan =
+                        new Models.Scan
+                        {
+                            ChannelID = channelId.ToString(),
+                            ScanStartedUserID = userId.ToString(),
+                            StartedAt = _config.GetUtcNow(),
+                            Expr = expr,
+                            MaxSize = maxSize,
+                            NoProgress = noProgress,
+                        };
+                    await context.Scans.AddAsync(newScan);
+                }
+                else
+                {
+                    await RespondByCautionAsync("すでに別の集計が行われています。", channelId, userId);
+                    return;
+                }
+                await context.SaveChangesAsync();
             }
-            else
-            {
-                await RespondByCautionAsync("すでに別の集計が行われています。", channelId, userId);
-            }
+
+            await RespondBySayAsync($"{expr.ToString()} の集計が開始されました。", channelId, userId);
         }
 
         public async Task StartAsync(ILazySocketMessageChannel channel, ILazySocketUser user, bool force, Expr.Main expr, int maxSize, bool noProgress)
         {
             if (channel == null) throw new ArgumentNullException(nameof(channel));
             if (user == null) throw new ArgumentNullException(nameof(user));
-            await StartAsync(await channel.GetIdAsync(), await user.GetIdAsync(), force, expr, maxSize, noProgress);
+            await StartAsync(await channel.GetIdAsync(), await user.GetIdAsync(), await user.GetUsernameAsync(), force, expr, maxSize, noProgress);
         }
 
-        public async Task GetCurrentOrCachedProgressAsync(ulong channelId, ulong userId, bool shuffled)
+        public async Task GetLatestProgressAsync(ulong channelId, ulong userId, bool shuffled)
         {
-            var key = (channelId, userId);
-            if (_core.TryGetValue(key, out var value))
+            Models.Scan scan;
+            using (var context = new MainDbContext(_config))
             {
-                await RespondAsync(value.value, channelId, userId, shuffled ? RespondType.ShuffledShow : RespondType.Show);
+                scan =
+                    await
+                    context.Scans
+                    .Where(s => s.ChannelID == channelId.ToString() && s.ScanStartedUserID == userId.ToString())
+                    .OrderBy(s => s.IsArchived)
+                    .ThenByDescending(s => s.StartedAt)
+                    .Include(s => s.ScanRolls)
+                    .ThenInclude(s => s.User)
+                    .FirstOrDefaultAsync();
             }
-            else
+            if (scan == null)
             {
-                if (_finishedCoreCache.TryGetValue(key, out var cache))
-                {
-                    await RespondAsync(cache.value, channelId, userId, shuffled ? RespondType.ShuffledShow : RespondType.Show);
-                }
-                else
-                {
-                    await RespondByCautionAsync("集計が見つかりません。", channelId, userId);
-                }
+                await RespondByCautionAsync("集計が見つかりません。", channelId, userId);
+                return;
             }
+            var value = new Value(scan);
+            await RespondAsync(value, channelId, userId, shuffled ? RespondType.ShuffledShow : RespondType.Show);
         }
 
-        public async Task GetCurrentOrCachedProgressAsync(ILazySocketMessageChannel channel, ILazySocketUser user, bool shuffled)
+        public async Task GetLatestProgressAsync(ILazySocketMessageChannel channel, ILazySocketUser user, bool shuffled)
         {
             if (channel == null) throw new ArgumentNullException(nameof(channel));
             if (user == null) throw new ArgumentNullException(nameof(user));
 
-            await GetCurrentOrCachedProgressAsync(await channel.GetIdAsync(), await user.GetIdAsync(), shuffled);
-        }
-
-        public async Task GetCachedOrCurrentProgressAsync(ulong channelId, ulong userId, bool shuffled)
-        {
-            var key = (channelId, userId);
-            if (_finishedCoreCache.TryGetValue(key, out var cache))
-            {
-                await RespondAsync(cache.value, channelId, userId, shuffled ? RespondType.ShuffledShow : RespondType.Show);
-            }
-            else
-            {
-                if (_core.TryGetValue(key, out var value))
-                {
-                    await RespondAsync(value.value, channelId, userId, shuffled ? RespondType.ShuffledShow : RespondType.Show);
-                }
-                else
-                {
-                    await RespondByCautionAsync("集計が見つかりません。", channelId, userId);
-                }
-            }
+            await GetLatestProgressAsync(await channel.GetIdAsync(), await user.GetIdAsync(), shuffled);
         }
 
         public async Task AbortAsync(ulong channelId, ulong userId)
         {
-            var key = (channelId, userId);
-            if (TryRemoveAndCache(key, out var value))
-            {
-                await RespondAsync(value, channelId, userId, RespondType.Aborted);
-            }
-            else
+            var archived = await TryArchiveAsync(channelId, userId);
+            if (archived.Count == 0)
             {
                 await RespondByCautionAsync("集計が見つかりません。", channelId, userId);
+                return;
+            }
+            foreach (var a in archived)
+            {
+                await RespondAsync(a, channelId, userId, RespondType.Aborted);
             }
         }
 
         public async Task EndAsync(ulong channelId, ulong userId, bool suppressNotFoundResponse = false)
         {
-            var key = (channelId, userId);
-            if (TryRemoveAndCache(key, out var value))
-            {
-                await RespondAsync(value, channelId, userId, RespondType.Ended);
-            }
-            else
+            var archived = await TryArchiveAsync(channelId, userId);
+            if (archived.Count == 0)
             {
                 if (!suppressNotFoundResponse)
                 {
-                    await RespondByCautionAsync("集計は行われていません。", channelId, userId);
+                    await RespondByCautionAsync("集計が見つかりません。", channelId, userId);
                 }
+                return;
+            }
+            foreach (var a in archived)
+            {
+                await RespondAsync(a, channelId, userId, RespondType.Ended);
             }
         }
 
-        public async Task SetDiceAsync(ulong channelId, ulong rollingUserId, Expr.Main.Executed executedExpr)
+        private async Task AddOrUpdateUserAsync(MainDbContext context, ulong userId, string username)
         {
-            var rollingPairs =
-                _core
-                .ToEnumerable()
-                .Where(pair =>
-                {
-                    var (scanningChannelId, _) = pair.Key;
-                    return scanningChannelId == channelId;
-                });
-            foreach (var pair in rollingPairs)
+            if (context == null) throw new ArgumentNullException(nameof(context));
+
+            var found = await context.Users.FirstOrDefaultAsync();
+            if (found == null)
             {
-                var value = pair.Value.Item1;
-                if (!Expr.Main.AreEquivalent(executedExpr.Expr, value.WatchingExpr))
-                {
-                    continue;
-                }
-                await value.TrySetAsync(_client, rollingUserId, executedExpr);
-                if (value.RolledDicesCount >= value.MaxSize)
-                {
-                    await EndAsync(channelId, pair.Key.scanStartedUserId);
-                    return;
-                }
-                if (!value.NoProgress)
-                {
-                    await RespondAsync(value, channelId, pair.Key.scanStartedUserId, RespondType.TochuuKeika);
-                }
+                await context.Users.AddAsync(new Models.User { ID = userId.ToString(), Username = username });
+                return;
             }
+            found.Username = username;
         }
 
-        public sealed class User : IEquatable<User>
+        public async Task SetDiceAsync(ulong channelId, ulong rollingUserId, string rollingUserName, Expr.Main.Executed executedExpr)
         {
-            private User()
+            var scanIDsToRespond = new List<string>();
+            using (var context = new MainDbContext(_config))
             {
-
-            }
-
-            public static async Task<User> CreateAsync(ILazySocketUser user)
-            {
-                if (user == null)
+                var notArhivedScans =
+                    await
+                    context.Scans
+                    .Where(s => s.ChannelID == channelId.ToString() && !s.IsArchived)
+                    .Include(s => s.ScanRolls)
+                    .ThenInclude(s => s.User)
+                    .ToArrayAsync();
+                foreach (var scan in notArhivedScans)
                 {
-                    throw new ArgumentNullException(nameof(user));
+                    await AddOrUpdateUserAsync(context, rollingUserId, rollingUserName);
+
+                    if (!Expr.Main.AreEquivalent(scan.Expr, executedExpr.Expr))
+                    {
+                        continue;
+                    }
+                    if (!scan.ScanRolls.Any(s => s.UserID == rollingUserId.ToString()))
+                    {
+                        var scanRoll = new Models.ScanRoll
+                        {
+                            UserID = rollingUserId.ToString(),
+                            ScanID = scan.ID,
+                            Value = executedExpr.Value,
+                            ValueTieBreaker = Guid.NewGuid().ToString()
+                        };
+                        await context.ScanRolls.AddAsync(scanRoll);
+                    }
+                    scanIDsToRespond.Add(scan.ID);
                 }
+                await context.SaveChangesAsync();
 
-                var result = new User();
-                result.UserId = await user.GetIdAsync();
-                result.Username = await user.GetUsernameAsync();
-                return result;
-            }
-
-            public static async Task<User> TryCreateAsync(ILazySocketClient client, ulong userId)
-            {
-                if (client == null)
+                foreach (var scanID in scanIDsToRespond)
                 {
-                    throw new ArgumentNullException(nameof(client));
+                    var scan =
+                        await
+                        context.Scans
+                        .Where(s => s.ID == scanID)
+                        .Include(s => s.ScanRolls)
+                        .ThenInclude(s => s.User)
+                        .FirstOrDefaultAsync();
+                    if (scan == null)
+                    {
+                        continue;
+                    }
+                    if (!ulong.TryParse(scan.ScanStartedUserID, out var scanStartedUserID))
+                    {
+                        continue;
+                    }
+                    if (scan.ScanRolls.Count >= scan.MaxSize)
+                    {
+                        await EndAsync(channelId, scanStartedUserID);
+                        continue;
+                    }
+                    if (!scan.NoProgress)
+                    {
+                        await RespondAsync(new Value(scan), channelId, scanStartedUserID, RespondType.TochuuKeika);
+                    }
                 }
-
-                var user = await client.TryGetUserAsync(userId);
-                if (user == null)
-                {
-                    return null;
-                }
-                var result = new User();
-                result.UserId = userId;
-                result.Username = await user.GetUsernameAsync();
-                return result;
-            }
-
-            public ulong UserId { get; private set; }
-            public string Username { get; private set; }
-
-            public bool Equals(User other)
-            {
-                if (other == null)
-                {
-                    return false;
-                }
-                return UserId == other.UserId;
-            }
-
-            public override bool Equals(object obj)
-            {
-                return Equals(obj as User);
-            }
-
-            public override int GetHashCode()
-            {
-                return UserId.GetHashCode();
-            }
-
-            public override string ToString()
-            {
-                return $"({UserId}, {Username})";
-            }
-
-            public static bool operator ==(User x, User y)
-            {
-                if ((object)x == null)
-                {
-                    return (object)y == null;
-                }
-                return x.Equals(y);
-            }
-
-            public static bool operator !=(User x, User y)
-            {
-                return !(x == y);
             }
         }
 
         public sealed class Value
         {
-            // (ダイスの値, そのダイスを振って出したユーザー)
-            // User はタイブレークによって降順にソートされる
-            private readonly Dictionary<int, List<User>> _rolledDices = new Dictionary<int, List<User>>();
-            private readonly object _gate = new object();
-
-            public Value(Expr.Main expr, int maxSize, bool noProgress)
+            // Models.ScanのScanRollsとUserをIncludeしておくことを忘れないように！
+            public Value(Models.Scan scan)
             {
-                WatchingExpr = expr ?? throw new ArgumentNullException(nameof(expr));
-                MaxSize = maxSize;
-                NoProgress = noProgress;
+                if (scan == null) throw new ArgumentNullException(nameof(scan));
+                if (scan.ScanRolls == null) throw new ArgumentException(nameof(scan.ScanRolls));
+
+                WatchingExpr = scan.Expr ?? Expr.Main.Invalid;
+                MaxSize = scan.MaxSize;
+                NoProgress = scan.NoProgress;
+                IsArchived = scan.IsArchived;
+                Ranking =
+                    scan.ScanRolls
+                    .Where(r => r != null)
+                    .OrderByDescending(r => r.Value)
+                    .ThenByDescending(r => r.ValueTieBreaker)
+                    .SelectMany((r, i) =>
+                    {
+                        if (ulong.TryParse(r.UserID, out var userID))
+                        {
+                            return new[] { (i, userID, r.User.Username, r.Value) };
+                        }
+                        return new (int, ulong, string, int)[0];
+                    })
+                    .ToArray()
+                    .ToReadOnly();
             }
 
             public Expr.Main WatchingExpr { get; }
             public int MaxSize { get; }
             public bool NoProgress { get; }
+            public bool IsArchived { get; }
 
-            private bool ContainsUser(User user)
-            {
-                return
-                    _rolledDices
-                    .SelectMany(pair => pair.Value)
-                    .Any(u => u == user);
-            }
-
-            private static void InsertRandom<T>(IList<T> source, T item)
-            {
-                var index = Random.Next(0, source.Count + 1);
-                source.Insert(index, item);
-            }
-
-            public async Task<bool> TrySetAsync(ILazySocketClient client, ulong userId, Expr.Main.Executed executedExpr)
-            {
-                if (client == null)
-                {
-                    throw new ArgumentNullException(nameof(client));
-                }
-
-                var userValue = await User.TryCreateAsync(client, userId);
-                if (userValue == null || ContainsUser(userValue))
-                {
-                    return false;
-                }
-                if (_rolledDices.TryGetValue(executedExpr.Value, out var users))
-                {
-                    InsertRandom(users, userValue);
-                    return true;
-                }
-
-                _rolledDices[executedExpr.Value] = new List<User> { userValue };
-                return true;
-            }
-
-            public int RolledDicesCount
-            {
-                get
-                {
-                    return
-                        _rolledDices
-                        .SelectMany(pair => pair.Value.Select(value => new { Key = pair.Key, Value = value }))
-                        .Count();
-                }
-            }
-
-            public IReadOnlyList<(int rank, User user, int rolledDice)> GetRolledDices()
-            {
-                return
-                    _rolledDices
-                    .OrderByDescending(pair => pair.Key)
-                    .SelectMany(pair => pair.Value.Select(value => new { Key = pair.Key, Value = value }))
-                    .Select((pair, i) => (i, pair.Value, pair.Key))
-                    .ToArray()
-                    .ToReadOnly();
-            }
+            public IReadOnlyList<(int rank, ulong userId, string userName, int rolledDice)> Ranking { get; }
         }
     }
 
     internal sealed class AllInstances
     {
-        public AllInstances(ILazySocketClient client, ITime time)
+        public AllInstances(ILazySocketClient client, IConfig config)
         {
             if (client == null)
             {
                 throw new ArgumentNullException(nameof(client));
             }
-            Scan = new ScanMachine(client, time ?? throw new ArgumentNullException(nameof(time)));
+            Scan = new ScanMachine(client, config ?? throw new ArgumentNullException(nameof(config)));
             SentResponse = Scan.SentResponse;
         }
 

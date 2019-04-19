@@ -124,7 +124,7 @@ namespace DiscordDice
                 responseSent
                 .Buffer(_bufferTime)
                 .Synchronize(_gate)
-                .Subscribe(async responses =>
+                .SubscribeAsync(async responses =>
                 {
                     foreach (var r in responses)
                     {

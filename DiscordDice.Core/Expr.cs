@@ -446,7 +446,7 @@ namespace DiscordDice
 
                 public override string ToString()
                 {
-                    return $"{Count}d{Max}";
+                    return $"{(OmitPlusString ? "" : "+")}{Count}d{Max}";
                 }
 
                 public string NonExecutedString => ToString();

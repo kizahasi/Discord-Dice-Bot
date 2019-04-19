@@ -235,7 +235,7 @@ scan-end コマンドが実行されないまま長い時間が経過した場�
 
         protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
-            await _scanMachine.GetCurrentOrCachedProgressAsync(channel, user, _shuffledOption.HasOption);
+            await _scanMachine.GetLatestProgressAsync(channel, user, _shuffledOption.HasOption);
             return Response.None;
         }
 

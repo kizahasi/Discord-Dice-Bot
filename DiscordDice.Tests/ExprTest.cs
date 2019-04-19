@@ -258,5 +258,31 @@ namespace DiscordDice.Tests
                 }
             }
         }
+
+        [TestClass]
+        public class ToStringTest
+        {
+            private IEnumerable<string> EquivalentTestSource()
+            {
+                yield return "2";
+                yield return "0";
+                yield return "-3+1";
+                yield return "2d100";
+                yield return "1d150+1d150";
+                yield return "-1+1d50";
+            }
+
+            [TestMethod]
+            public void EquivalentTest()
+            {
+                foreach (var text in EquivalentTestSource())
+                {
+                    var xCode = Expr.Main.Interpret(text);
+                    var yCode = Expr.Main.Interpret(xCode.ToString());
+                    Assert.IsTrue(Expr.Main.AreEquivalent(xCode, yCode));
+                    Assert.IsTrue(Expr.Main.AreEquivalent(yCode, xCode));
+                }
+            }
+        }
     }
 }

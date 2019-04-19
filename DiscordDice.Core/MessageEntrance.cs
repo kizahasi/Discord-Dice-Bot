@@ -23,12 +23,13 @@ namespace DiscordDice
         readonly Subject<Response> _manualResponseSent = new Subject<Response>();
         readonly BasicMachines.AllInstances _basicMachines;
 
-        public MessageEntrance(ILazySocketClient client, ITime time)
+        public MessageEntrance(ILazySocketClient client, IConfig config)
         {
             _client = client ?? throw new ArgumentNullException(nameof(client));
-            if (time == null) throw new ArgumentNullException(nameof(time));
+            if (config == null) throw new ArgumentNullException(nameof(config));
 
-            _basicMachines = new BasicMachines.AllInstances(client, time);
+
+            _basicMachines = new BasicMachines.AllInstances(client, config);
 
             ResponseSent = _basicMachines.SentResponse.Merge(_manualResponseSent).Where(r => r != null);
         }
@@ -65,7 +66,7 @@ namespace DiscordDice
             }
             var channel = await message.GetChannelAsync();
             var author = await message.GetAuthorAsync();
-            await _basicMachines.Scan.SetDiceAsync(await channel.GetIdAsync(), await author.GetIdAsync(), executed);
+            await _basicMachines.Scan.SetDiceAsync(await channel.GetIdAsync(), await author.GetIdAsync(), await author.GetUsernameAsync() , executed);
             var result = await Response.TryCreateSayAsync(_client, $"{await author.GetMentionAsync()} {executed.Message}", await channel.GetIdAsync()) ?? Response.None;
             return (result, false);
         }
@@ -76,6 +77,8 @@ namespace DiscordDice
 
             //var content = await message.GetContentAsync();
             //ConsoleEx.WriteReceivedMessage(content);
+
+            await _basicMachines.Scan.TryUpdateScansAsync();
 
             var author = await message.GetAuthorAsync();
             if (await author.GetIsBotAsync())
