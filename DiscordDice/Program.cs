@@ -22,7 +22,7 @@ using System.Threading.Tasks;
  */
 namespace DiscordDice
 {
-    public static class Configuration
+    internal static class Configuration
     {
         public static bool IsDebug
         {
@@ -39,14 +39,13 @@ namespace DiscordDice
 
     class Program
     {
-        static DiscordSocketClient client;
-        static MessageEntrance entrance = new MessageEntrance(Time.Default);
-
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             TaskScheduler.UnobservedTaskException += (sender, e) =>
             {
                 ConsoleEx.WriteError("Received UnobservedTaskException. The StackTrace is following:");
+                ConsoleEx.WriteError(e.Exception.GetType().ToString());
+                ConsoleEx.WriteError(e.Exception.Message);
                 ConsoleEx.WriteError(e.Exception.StackTrace);
                 var areExceptionsOk =
                     ((e.Exception as AggregateException)
@@ -60,14 +59,14 @@ namespace DiscordDice
                 }
             };
 
-            MainCore().Wait();
+            await MainLoop();
         }
 
-        static async Task MainCore()
+        static async Task MainLoop()
         {
             try
             {
-                await MainAsync();
+                await ConnectDiscordAsync();
             }
             catch (AggregateException e)
             {
@@ -84,7 +83,7 @@ namespace DiscordDice
 
             await Task.Delay(10 * 60 * 1000);
 
-            await MainCore();
+            await MainLoop();
         }
 
         public static async Task<string> GetTokenAsync()
@@ -121,7 +120,7 @@ namespace DiscordDice
             throw new DiscordDiceException(invalidJsonMessage);
         }
 
-        static async Task MainAsync()
+        static async Task ConnectDiscordAsync()
         {
             if (Configuration.IsDebug)
             {
@@ -131,13 +130,27 @@ namespace DiscordDice
             {
                 Console.WriteLine("Configuration is RELEASE.");
             }
+            using (var context = MainDbContext.GetInstance(Config.Default))
+            {
+                Console.WriteLine("Ensuring database is created...");
+                await context.Database.EnsureCreatedAsync();
+                Console.WriteLine("Ensured database is created.");
+            }
             Console.WriteLine("Starting...");
 
-            client = new DiscordSocketClient();
+            var client = new DiscordSocketClient();
 
             client.Log += OnLog;
-            client.MessageReceived += OnMessageReceived;
-            ResponsesSender.Start(entrance.ResponseSent);
+            client.Ready += () =>
+            {
+                var entrance = new MessageEntrance(new LazySocketClient(client), Config.Default);
+                ResponsesSender.Start(entrance.ResponseSent);
+                client.MessageReceived += async message =>
+                {
+                    await entrance.ReceiveMessageAsync(new LazySocketMessage(message), client.CurrentUser.Id);
+                };
+                return Task.CompletedTask;
+            };
 
             var token = await GetTokenAsync();
             Console.WriteLine("Logging in...");
@@ -151,15 +164,10 @@ namespace DiscordDice
             await Task.Delay(-1);
         }
 
-        private static async Task OnLog(LogMessage msg)
+        private static Task OnLog(LogMessage msg)
         {
             Console.WriteLine(msg.ToString());
-            await Task.Delay(0);
-        }
-
-        private static async Task OnMessageReceived(SocketMessage message)
-        {
-            await entrance.OnNextAsync(new LazySocketMessage(message), client.CurrentUser.Id);
+            return Task.CompletedTask;
         }
     }
 }

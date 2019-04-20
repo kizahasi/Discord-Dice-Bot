@@ -1,5 +1,8 @@
 # User-defined
 tokens.json
+main.sqlite
+main-debug.sqlite
+main-test.sqlite
 
 
 ## ------

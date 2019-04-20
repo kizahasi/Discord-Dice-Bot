@@ -53,6 +53,21 @@ namespace DiscordDice
 
         private static class Interpreter
         {
+            static readonly IReadOnlyList<(int, char)> numbers = 
+                new (int number, char character)[]
+                    {
+                        (0, '0'), (0, '０'),
+                        (1, '1'), (1, '１'),
+                        (2, '2'), (2, '２'),
+                        (3, '3'), (3, '３'),
+                        (4, '4'), (4, '４'),
+                        (5, '5'), (5, '５'),
+                        (6, '6'), (6, '６'),
+                        (7, '7'), (7, '７'),
+                        (8, '8'), (8, '８'),
+                        (9, '9'), (9, '９'),
+                    };
+
             private sealed class TokensBuilder
             {
                 LastType _lastType = LastType.None;
@@ -295,7 +310,7 @@ namespace DiscordDice
                         continue;
                     }
 
-                    if (c == '+')
+                    if (c == '+' || c == '＋')
                     {
                         if (!tokensBuilder.TryAddPlus())
                         {
@@ -304,7 +319,7 @@ namespace DiscordDice
                         continue;
                     }
 
-                    if (c == '-')
+                    if (c == '-' || c == '－')
                     {
                         if (!tokensBuilder.TryAddMinus())
                         {
@@ -313,7 +328,7 @@ namespace DiscordDice
                         continue;
                     }
 
-                    if (c == 'd' || c == 'D')
+                    if (c == 'd' || c == 'D' || c == 'ｄ' || c == 'Ｄ')
                     {
                         if (!tokensBuilder.TryAddD())
                         {
@@ -322,11 +337,11 @@ namespace DiscordDice
                         continue;
                     }
 
-                    foreach (var i in Enumerable.Range(0, 10))
+                    foreach (var (number, character) in numbers)
                     {
-                        if (c.ToString() == i.ToString())
+                        if (c.ToString() == character.ToString())
                         {
-                            if (!tokensBuilder.TryAddNumber(i))
+                            if (!tokensBuilder.TryAddNumber(number))
                             {
                                 return null;
                             }
@@ -446,7 +461,7 @@ namespace DiscordDice
 
                 public override string ToString()
                 {
-                    return $"{Count}d{Max}";
+                    return $"{(OmitPlusString ? "" : "+")}{Count}d{Max}";
                 }
 
                 public string NonExecutedString => ToString();

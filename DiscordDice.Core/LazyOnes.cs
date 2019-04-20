@@ -73,6 +73,12 @@ namespace DiscordDice
         Task<string> GetContentAsync();
         Task<IReadOnlyCollection<ILazySocketUser>> GetMentionedUsersAsync();
     }
+    public interface ILazySocketClient
+    {
+        Task<ILazySocketMessageChannel> TryGetMessageChannelAsync(ulong channelId);
+
+        Task<ILazySocketUser> TryGetUserAsync(ulong userId);
+    }
 
     public sealed class LazySocketUser : ILazySocketUser
     {
@@ -160,6 +166,41 @@ namespace DiscordDice
                 .Select(user => new LazySocketUser(user))
                 .ToArray()
                 .ToReadOnly();
+            return Task.FromResult(result);
+        }
+    }
+
+    public sealed class LazySocketClient : ILazySocketClient
+    {
+        // _client.Readyイベントがfireされていないと、存在するチャンネルに対してclient.GetChannelを呼んでもnullを返したりやclient.Guildsが空だったりする。
+        // なので、_clientはReadyイベントがfireされた（もしくはそれに近い）状態になっているべき
+        readonly DiscordSocketClient _client;
+        
+        // このコンストラクタに渡すDiscordSocketClientは、client.Readyイベントがfireされた状態で渡すこと！！
+        public LazySocketClient(DiscordSocketClient client)
+        {
+            _client = client ?? throw new ArgumentNullException(nameof(client));
+        }
+
+        public Task<ILazySocketMessageChannel> TryGetMessageChannelAsync(ulong channelId)
+        {
+            var channel = _client.GetChannel(channelId) as ISocketMessageChannel;
+            if (channel == null)
+            {
+                return null;
+            }
+            ILazySocketMessageChannel result = new LazySocketMessageChannel(channel);
+            return Task.FromResult(result);
+        }
+
+        public Task<ILazySocketUser> TryGetUserAsync(ulong userId)
+        {
+            var user = _client.GetUser(userId);
+            if (user == null)
+            {
+                return null;
+            }
+            ILazySocketUser result = new LazySocketUser(user);
             return Task.FromResult(result);
         }
     }

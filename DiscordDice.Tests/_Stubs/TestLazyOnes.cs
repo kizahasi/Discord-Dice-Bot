@@ -60,7 +60,7 @@ namespace DiscordDice.Tests
             }
         }
 
-        public static TestLazySocketUser OtherBot
+        public static TestLazySocketUser AnotherBot
         {
             get
             {
@@ -126,7 +126,7 @@ namespace DiscordDice.Tests
         /// <summary>他の BOT による、Mention を含まないメッセージを作成します。</summary>
         public static TestLazySocketMessage CreateOtherBotMessage(string context)
         {
-            var author = TestLazySocketUser.OtherBot;
+            var author = TestLazySocketUser.AnotherBot;
             var mentionedUsers = new TestLazySocketUser[] { }.ToReadOnly();
             return new TestLazySocketMessage
             {
@@ -135,6 +135,44 @@ namespace DiscordDice.Tests
                 Content = $"{context}",
                 MentionedUsers = mentionedUsers
             };
+        }
+    }
+
+    public sealed class TestLazySocketClient : ILazySocketClient
+    {
+        public IDictionary<ulong, ILazySocketMessageChannel> MessageChannels { get; } = new Dictionary<ulong, ILazySocketMessageChannel>();
+        public IDictionary<ulong, ILazySocketUser> Users { get; } = new Dictionary<ulong, ILazySocketUser>();
+
+        public Task<ILazySocketMessageChannel> TryGetMessageChannelAsync(ulong channelId)
+        {
+            if( MessageChannels.TryGetValue(channelId, out var result))
+            {
+                return Task.FromResult(result);
+            }
+            return Task.FromResult<ILazySocketMessageChannel>(null);
+        }
+
+        public Task<ILazySocketUser> TryGetUserAsync(ulong userId)
+        {
+            if (Users.TryGetValue(userId, out var result))
+            {
+                return Task.FromResult(result);
+            }
+            return Task.FromResult<ILazySocketUser>(null);
+        }
+
+        public static TestLazySocketClient Default
+        {
+            get
+            {
+                var result = new TestLazySocketClient();
+                result.MessageChannels[TestLazySocketMessageChannel.Default.Id] = TestLazySocketMessageChannel.Default;
+                result.Users[TestLazySocketUser.Author.Id] = TestLazySocketUser.Author;
+                result.Users[TestLazySocketUser.NonAuthor.Id] = TestLazySocketUser.NonAuthor;
+                result.Users[TestLazySocketUser.MyBot.Id] = TestLazySocketUser.MyBot;
+                result.Users[TestLazySocketUser.AnotherBot.Id] = TestLazySocketUser.AnotherBot;
+                return result;
+            }
         }
     }
 }

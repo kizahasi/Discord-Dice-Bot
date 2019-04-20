@@ -97,10 +97,10 @@ namespace DiscordDice.Commands
             await
                 (await message.GetMentionedUsersAsync())
                 .ToAsyncEnumerable()
-                .ForEachAsync(async user =>
+                .ForEachAsync(user =>
                 {
                     // @everyone や @here では MentionedUsers に各ユーザーの ID は含まれないようなので、このような単純な処理で OK
-                    if (await user.GetIdAsync() == botCurrentUserId)
+                    if (user.GetIdAsync().Result == botCurrentUserId)
                     {
                         isMentioned = true;
                     }

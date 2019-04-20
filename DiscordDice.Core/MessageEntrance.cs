@@ -9,25 +9,28 @@ using System.Threading.Tasks;
 
 /*
 [MessageEntrance] ──────────────メソッド呼び出し───────────────→ [BasicMachine]
-        |                                                              ↑
-        ───Discord のメッセージを渡す───→ [Command] ───メソッド呼び出し──┘
+        |                                                                                          ↑
+        ───Discord のメッセージを渡す────→ [Command] ──────メソッド呼び出し─────┘
 
 
-[MessageEntrance] ←────────IObservable<Response>で通知───────── [BasicMachine] 
+[MessageEntrance] ←───────────IObservable<Response>で通知──────────── [BasicMachine] 
 */
 namespace DiscordDice
 {
     public sealed class MessageEntrance
     {
+        readonly ILazySocketClient _client;
         readonly Subject<Response> _manualResponseSent = new Subject<Response>();
         readonly BasicMachines.AllInstances _basicMachines;
 
-        public MessageEntrance(ITime time)
+        public MessageEntrance(ILazySocketClient client, IConfig config)
         {
-            if (time == null) throw new ArgumentNullException(nameof(time));
+            _client = client ?? throw new ArgumentNullException(nameof(client));
+            if (config == null) throw new ArgumentNullException(nameof(config));
 
-            _basicMachines = new BasicMachines.AllInstances(time);
-            
+
+            _basicMachines = new BasicMachines.AllInstances(client, config);
+
             ResponseSent = _basicMachines.SentResponse.Merge(_manualResponseSent).Where(r => r != null);
         }
 
@@ -39,12 +42,13 @@ namespace DiscordDice
                 {
                     helpCommand,
                     new VersionCommand(),
+                    new ChangelogCommand(),
                     new ScanStartCommand(_basicMachines.Scan),
                     new ScanShowCommand(_basicMachines.Scan),
                     new ScanEndCommand(_basicMachines.Scan),
                 };
             helpCommand.HelpMessage = () => CommandsHelp.Create(allCommandsByArray);
-            return 
+            return
                 allCommandsByArray
                 .SelectMany(command => command.GetBodies().Select(body => new { Key = body, Value = command }))
                 .ToDictionary(a => a.Key, a => a.Value);
@@ -63,17 +67,19 @@ namespace DiscordDice
             }
             var channel = await message.GetChannelAsync();
             var author = await message.GetAuthorAsync();
-            await _basicMachines.Scan.SetDiceAsync(channel, author, executed);
-            var result = Response.CreateSay($"{await author.GetMentionAsync()} {executed.Message}", await message.GetChannelAsync());
+            await _basicMachines.Scan.SetDiceAsync(await channel.GetIdAsync(), await author.GetIdAsync(), await author.GetUsernameAsync() , executed);
+            var result = await Response.TryCreateSayAsync(_client, $"{await author.GetMentionAsync()} {executed.Message}", await channel.GetIdAsync()) ?? Response.None;
             return (result, false);
         }
 
-        public async Task OnNextAsync(ILazySocketMessage message, ulong botCurrentUserId)
+        public async Task ReceiveMessageAsync(ILazySocketMessage message, ulong botCurrentUserId)
         {
             if (message == null) throw new ArgumentNullException(nameof(message));
 
-            var content = await message.GetContentAsync();
+            //var content = await message.GetContentAsync();
             //ConsoleEx.WriteReceivedMessage(content);
+
+            await _basicMachines.Scan.TryUpdateScansAsync();
 
             var author = await message.GetAuthorAsync();
             if (await author.GetIsBotAsync())
@@ -86,7 +92,7 @@ namespace DiscordDice
             {
                 _manualResponseSent.OnNext(nonCommandResponse);
             }
-            if(!executesCommand)
+            if (!executesCommand)
             {
                 return;
             }
@@ -100,17 +106,21 @@ namespace DiscordDice
             var channel = await message.GetChannelAsync();
             if (!rawCommand.HasValue)
             {
-                _manualResponseSent.OnNext(Response.CreateCaution(rawCommand.Error, channel, author));
+                var response = await Response.TryCreateCautionAsync(_client, rawCommand.Error, await channel.GetIdAsync(), await author.GetIdAsync()) ?? Response.None;
+                _manualResponseSent.OnNext(response);
                 return;
             }
 
             var allCommands = CreateAllCommands();
             if (allCommands.TryGetValue(rawCommand.Value.Body, out var command))
             {
-                _manualResponseSent.OnNext(await command.InvokeAsync(rawCommand.Value, channel, author));
+                _manualResponseSent.OnNext(await command.InvokeAsync(rawCommand.Value, _client, await channel.GetIdAsync(), await author.GetIdAsync()));
                 return;
             }
-            _manualResponseSent.OnNext(Response.CreateCaution(Texts.Error.Commands.NotFound(rawCommand.Value.Body), channel, author));
+            {
+                var response = await Response.TryCreateCautionAsync(_client, Texts.Error.Commands.NotFound(rawCommand.Value.Body), await channel.GetIdAsync(), await author.GetIdAsync()) ?? Response.None;
+                _manualResponseSent.OnNext(response);
+            }
         }
     }
 }

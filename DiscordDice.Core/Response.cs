@@ -58,23 +58,37 @@ namespace DiscordDice
             }
         }
 
-        static Response none = new Response(ResponseType.None, null, null, null);
-        public static Response None
+        public static Response None { get; } = new Response(ResponseType.None, null, null, null);
+
+        private static async Task<Response> TryCreateAsync(ResponseType type, ILazySocketClient client, string message, ulong channelId, ulong? userIdOfReplyTo = null)
         {
-            get
+            var channel = await client.TryGetMessageChannelAsync(channelId);
+            if(channel == null)
             {
-                return none;
+                return null;
             }
+            if(userIdOfReplyTo == null)
+            {
+                return new Response(type, message, channel);
+            }
+            var user = await client.TryGetUserAsync(userIdOfReplyTo.Value);
+            if (user == null)
+            {
+                return null;
+            }
+            return new Response(type, message, channel, user);
         }
 
-        public static Response CreateSay(string message, ILazySocketMessageChannel channel, ILazySocketUser replyTo = null)
+        public static async Task<Response> TryCreateSayAsync(ILazySocketClient client, string message, ulong channelId, ulong? userIdOfReplyTo = null)
         {
-            return new Response(ResponseType.Say, message, channel ?? throw new ArgumentNullException(nameof(channel)), replyTo);
+            if (client == null) throw new ArgumentNullException(nameof(client));
+            return await TryCreateAsync(ResponseType.Say, client, message, channelId, userIdOfReplyTo);
         }
 
-        public static Response CreateCaution(string message, ILazySocketMessageChannel channel, ILazySocketUser replyTo = null)
+        public static async Task<Response> TryCreateCautionAsync(ILazySocketClient client, string message, ulong channelId, ulong? userIdOfReplyTo = null)
         {
-            return new Response(ResponseType.Caution, message, channel ?? throw new ArgumentNullException(nameof(channel)), replyTo);
+            if (client == null) throw new ArgumentNullException(nameof(client));
+            return await TryCreateAsync(ResponseType.Caution, client, message, channelId, userIdOfReplyTo);
         }
 
         private class RateLimitedResponse
@@ -110,7 +124,7 @@ namespace DiscordDice
                 responseSent
                 .Buffer(_bufferTime)
                 .Synchronize(_gate)
-                .Subscribe(async responses =>
+                .SubscribeAsync(async responses =>
                 {
                     foreach (var r in responses)
                     {

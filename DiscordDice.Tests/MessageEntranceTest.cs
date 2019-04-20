@@ -8,6 +8,7 @@ using System.Linq;
 using System.Reactive;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 
 namespace DiscordDice.Tests.Commands
 {
@@ -45,9 +46,33 @@ namespace DiscordDice.Tests.Commands
                     expected.Where(ResponseFilter()));
             }
 
+            public static void TypesAre(IEnumerable<Recorded<Notification<Response>>> actual, params ResponseType[] expected)
+            {
+                var actual_ =
+                    actual
+                    .Where(ResponseFilter())
+                    .Select(r => r.Value.Value.Type)
+                    .ToArray();
+                CollectionAssert.AreEqual(actual_, expected);
+            }
+
+            public static void TypeCountsAre(IEnumerable<Recorded<Notification<Response>>> actual, int sayCount = 0, int cautionCount = 0)
+            {
+                var actual_ =
+                    actual
+                    .Where(ResponseFilter())
+                    .Select(r => r.Value.Value.Type)
+                    .ToArray();
+                var expected = 
+                    Enumerable.Repeat(ResponseType.Say, sayCount)
+                    .Concat(Enumerable.Repeat(ResponseType.Caution, cautionCount))
+                    .ToArray();
+                CollectionAssert.AreEquivalent(actual_, expected);
+            }
+
             public static void ExactlyOneSay(IEnumerable<Recorded<Notification<Response>>> actual)
             {
-                Assert.AreEqual(actual.Where(ResponseFilter()).Single().Value.Value.Type, ResponseType.Say);
+                TypesAre(actual, ResponseType.Say);
             }
 
             public static void AllSay(IEnumerable<Recorded<Notification<Response>>> actual, int count)
@@ -57,7 +82,7 @@ namespace DiscordDice.Tests.Commands
 
             public static void ExactlyOneCaution(IEnumerable<Recorded<Notification<Response>>> actual)
             {
-                Assert.AreEqual(actual.Where(ResponseFilter()).Single().Value.Value.Type, ResponseType.Caution);
+                TypesAre(actual, ResponseType.Caution);
             }
 
             public static void IsEmpty(IEnumerable<Recorded<Notification<Response>>> actual)
@@ -66,16 +91,22 @@ namespace DiscordDice.Tests.Commands
             }
         }
 
-        static (MessageEntrance, ITestableObserver<Response>, TestTime) Init()
+        static (MessageEntrance, ITestableObserver<Response>, TestConfig) Init()
         {
+            var config = new TestConfig { UtcNow = new DateTimeOffset(2000, 1, 1, 0, 0, 0, 0, TimeSpan.Zero) };
+
+            using (var context = MainDbContext.GetInstance(config))
+            {
+                context.Database.EnsureDeleted();
+                context.Database.EnsureCreated();
+            }
+
             var testScheduler = new TestScheduler();
             var testObserver = testScheduler.CreateObserver<Response>();
-            
-            var time = new TestTime { TimeLimit = TimeSpan.FromHours(1), UtcNow = new DateTimeOffset(2000, 1, 1, 0, 0, 0, 0, TimeSpan.Zero) };
-            var entrance = new MessageEntrance(time);
+            var entrance = new MessageEntrance(TestLazySocketClient.Default, config);
             entrance.ResponseSent.Subscribe(testObserver);
 
-            return (entrance, testObserver, time);
+            return (entrance, testObserver, config);
         }
 
 
@@ -85,7 +116,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("hello"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("hello"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -95,7 +126,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNotMentionedMessage("hello"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNotMentionedMessage("hello"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -106,7 +137,17 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("1d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("1d100"), botCurrentUserId);
+            AssertEx.ExactlyOneSay(testObserver.Messages);
+        }
+
+        [TestMethod]
+        public async Task RollByFullWidth_NoMentionTest()
+        {
+            ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
+            var (allCommands, testObserver, _) = Init();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("１ｄ１００"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -116,7 +157,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("1d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("1d100"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -126,7 +167,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNotMentionedMessage("1d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNotMentionedMessage("1d100"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -136,7 +177,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateOtherBotMessage("1d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateOtherBotMessage("1d100"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -147,7 +188,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("help"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("help"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -157,7 +198,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("help"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("help"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -167,7 +208,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("help --foo"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("help --foo"), botCurrentUserId);
             AssertEx.ExactlyOneCaution(testObserver.Messages);
         }
 
@@ -178,7 +219,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("-h"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("-h"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -188,7 +229,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("-h"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("-h"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -198,7 +239,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("-h --foo"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("-h --foo"), botCurrentUserId);
             AssertEx.ExactlyOneCaution(testObserver.Messages);
         }
 
@@ -208,7 +249,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("--help"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("--help"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -218,7 +259,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("--help"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("--help"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -228,7 +269,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("--help --foo"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("--help --foo"), botCurrentUserId);
             AssertEx.ExactlyOneCaution(testObserver.Messages);
         }
 
@@ -238,7 +279,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("version"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("version"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -248,7 +289,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("version"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("version"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -258,7 +299,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("version --foo"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("version --foo"), botCurrentUserId);
             AssertEx.ExactlyOneCaution(testObserver.Messages);
         }
 
@@ -268,7 +309,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("-v"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("-v"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -278,7 +319,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("-v"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("-v"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -288,7 +329,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("-v --foo"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("-v --foo"), botCurrentUserId);
             AssertEx.ExactlyOneCaution(testObserver.Messages);
         }
 
@@ -299,7 +340,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("--version"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("--version"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -309,7 +350,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("--version"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("--version"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -319,7 +360,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("--version --foo"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("--version --foo"), botCurrentUserId);
             AssertEx.ExactlyOneCaution(testObserver.Messages);
         }
 
@@ -329,7 +370,7 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("scan-start"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -339,8 +380,22 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("scan-end"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("scan-end"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
+        }
+
+        [TestMethod]
+        public async Task ScanEnd_DuplicateTest()
+        {
+            ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
+            var (allCommands, testObserver, _) = Init();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
+            testObserver.Messages.Clear();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
+            AssertEx.ExactlyOneCaution(testObserver.Messages);
         }
 
         [TestMethod]
@@ -349,11 +404,11 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -363,15 +418,15 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("1d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("1d100"), botCurrentUserId);
             AssertEx.AllSay(testObserver.Messages, 2);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -381,19 +436,19 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("1d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("1d100"), botCurrentUserId);
             AssertEx.AllSay(testObserver.Messages, 2);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("1d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("1d100"), botCurrentUserId);
             AssertEx.AllSay(testObserver.Messages, 2);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -403,11 +458,11 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("2d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("2d100"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -417,11 +472,11 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateNoMentionMessage("hooray!"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("hooray!"), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
@@ -431,14 +486,14 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
             AssertEx.ExactlyOneCaution(testObserver.Messages);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -448,19 +503,16 @@ namespace DiscordDice.Tests.Commands
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, time) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
             testObserver.Messages.Clear();
 
             time.AdvanceBy(TimeSpan.FromHours(1.5)); // TimeLimit になるくらい長時間経過させる
-            await Task.Delay(time.WindowOfCheckingTimeLimit + TimeSpan.FromSeconds(1)); // 必ず WindowOfCheckingTimeLimit 以上の時間が経過するよう +1秒 している
-            AssertEx.ExactlyOneSay(testObserver.Messages);
+            await Task.Delay(time.IntervalOfUpdatingScans + TimeSpan.FromSeconds(1)); // 必ず IntervalOfUpdatingScans 以上の時間が経過するよう +1秒 している
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
+            AssertEx.TypeCountsAre(testObserver.Messages, sayCount:1, cautionCount: 1);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
-            AssertEx.ExactlyOneCaution(testObserver.Messages);
-            testObserver.Messages.Clear();
-
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -468,13 +520,13 @@ namespace DiscordDice.Tests.Commands
         public async Task ScanShowTest()
         {
             var botCurrentUserId = TestLazySocketUser.MyBot.Id;
-            var (allCommands, testObserver, time) = Init();
+            var (allCommands, testObserver, _) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("1d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("1d100"), botCurrentUserId);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-show"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-show"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -484,14 +536,14 @@ namespace DiscordDice.Tests.Commands
             var botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, time) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("1d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("1d100"), botCurrentUserId);
             time.AdvanceBy(TimeSpan.FromHours(1.5)); // TimeLimit になるくらい長時間経過させる
-            await Task.Delay(time.WindowOfCheckingTimeLimit + TimeSpan.FromSeconds(1)); // 必ず WindowOfCheckingTimeLimit 以上の時間が経過するよう +1秒 している
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
+            await Task.Delay(time.IntervalOfUpdatingScans + TimeSpan.FromSeconds(1)); // 必ず IntervalOfUpdatingScans 以上の時間が経過するよう +1秒 している
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-show"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-show"), botCurrentUserId);
             AssertEx.ExactlyOneSay(testObserver.Messages);
         }
 
@@ -501,16 +553,16 @@ namespace DiscordDice.Tests.Commands
             var botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, time) = Init();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("1d100"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("1d100"), botCurrentUserId);
             time.AdvanceBy(TimeSpan.FromHours(1.5)); // TimeLimit になるくらい長時間経過させる
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
             time.AdvanceBy(TimeSpan.FromHours(1.5)); // キャッシュが削除されるくらい長時間経過させる
-            await Task.Delay(time.WindowOfCheckingTimeLimit + TimeSpan.FromSeconds(1)); // 必ず WindowOfCheckingTimeLimit 以上の時間が経過するよう +1秒 している
-            
+            await Task.Delay(time.IntervalOfUpdatingScans + TimeSpan.FromSeconds(1)); // 必ず IntervalOfUpdatingScans 以上の時間が経過するよう +1秒 している
+
             testObserver.Messages.Clear();
 
-            await allCommands.OnNextAsync(TestLazySocketMessage.CreateMentionedMessage("scan-show"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-show"), botCurrentUserId);
             AssertEx.ExactlyOneCaution(testObserver.Messages);
         }
     }
