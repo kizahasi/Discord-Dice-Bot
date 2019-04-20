@@ -421,8 +421,7 @@ namespace DiscordDice
                     }
                     else
                     {
-                        var plusString = OmitPlusString ? "" : "+";
-                        return (sum, plusString + result.ToString());
+                        return (sum, result.ToString());
                     }
                 }
 
@@ -461,7 +460,11 @@ namespace DiscordDice
 
                 public override string ToString()
                 {
-                    return $"{(OmitPlusString ? "" : "+")}{Count}d{Max}";
+                    if (Count >= 1)
+                    {
+                        return $"{(OmitPlusString ? "" : "+")}{Count}d{Max}";
+                    }
+                    return $"{Count}d{Max}";
                 }
 
                 public string NonExecutedString => ToString();
