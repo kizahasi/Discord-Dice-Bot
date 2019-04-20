@@ -42,6 +42,7 @@ namespace DiscordDice
                 {
                     helpCommand,
                     new VersionCommand(),
+                    new ChangelogCommand(),
                     new ScanStartCommand(_basicMachines.Scan),
                     new ScanShowCommand(_basicMachines.Scan),
                     new ScanEndCommand(_basicMachines.Scan),

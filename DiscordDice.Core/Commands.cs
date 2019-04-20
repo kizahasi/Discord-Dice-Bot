@@ -152,6 +152,23 @@ namespace DiscordDice.Commands
         public override string HelpText => $"{Texts.BotName} のバージョンを表示します。";
     }
 
+    internal sealed class ChangelogCommand : Command
+    {
+        public override string Body => "changelog";
+
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
+        {
+            var text = @"```
+更新履歴
+
+(なし)
+```";
+            return await Response.TryCreateSayAsync(client, text, await channel.GetIdAsync());
+        }
+
+        public override string HelpText => $"{Texts.BotName} の更新履歴を表示します。";
+    }
+
     internal sealed class ScanStartCommand : Command
     {
         readonly BasicMachines.ScanMachine _scanMachine;
