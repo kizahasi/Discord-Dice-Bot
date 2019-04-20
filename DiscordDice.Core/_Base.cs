@@ -1,4 +1,5 @@
-﻿using System;
+﻿using MathNet.Numerics.Random;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -9,7 +10,7 @@ namespace DiscordDice
     // 乱数アルゴリズムを変更しやすいように乱数処理をここに集約している
     internal static class Random
     {
-        static System.Random random = new System.Random();
+        static MersenneTwister random = new MersenneTwister(true);
         public static int Next(int min, int max)
         {
             return random.Next(min, max);
