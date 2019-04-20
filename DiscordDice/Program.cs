@@ -43,12 +43,25 @@ namespace DiscordDice
         {
             TaskScheduler.UnobservedTaskException += (sender, e) =>
             {
-                ConsoleEx.WriteError("Received UnobservedTaskException. The StackTrace is following:");
+                ConsoleEx.WriteError("Received UnobservedTaskException:");
                 ConsoleEx.WriteError(e.Exception.GetType().ToString());
                 ConsoleEx.WriteError(e.Exception.Message);
                 ConsoleEx.WriteError(e.Exception.StackTrace);
+                var aggregateException = e.Exception as AggregateException;
+                if(aggregateException == null)
+                {
+                    return;
+                }
+                ConsoleEx.WriteError("The exception is AggregateException. InnerExceptions are...:");
+                foreach (var (ex, i) in aggregateException.InnerExceptions.Select((ex, i) => (ex, i)))
+                {
+                    ConsoleEx.WriteError($"Exception {i}");
+                    ConsoleEx.WriteError(ex.GetType().ToString());
+                    ConsoleEx.WriteError(ex.Message);
+                    ConsoleEx.WriteError(ex.StackTrace);
+                }
                 var areExceptionsOk =
-                    ((e.Exception as AggregateException)
+                    (aggregateException
                     ?.InnerExceptions
                     ?.AsEnumerable()
                     ?? Enumerable.Empty<Exception>())
