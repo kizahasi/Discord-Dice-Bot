@@ -2,13 +2,14 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Threading.Tasks;
 
 namespace DiscordDice.Tests
 {
     public static class ExprTest
     {
-        private static void AssertOneConstant(Expr.Main expr, int value)
+        private static void AssertOneConstant(Expr.Main expr, BigInteger value)
         {
             Assert.IsNotNull(expr);
             Assert.IsNotNull(expr.Functions);
@@ -19,17 +20,17 @@ namespace DiscordDice.Tests
             Assert.AreEqual(constant.Value, value);
         }
 
-        private static void AssertConstant(Expr.Main expr, int value)
+        private static void AssertConstant(Expr.Main expr, BigInteger value)
         {
             Assert.IsNotNull(expr);
             Assert.IsNotNull(expr.Functions);
             Assert.IsTrue(expr.IsValid);
             Assert.IsTrue(expr.Functions.Count >= 1);
             Assert.IsTrue(expr.Functions.All(f => f.GetType() == typeof(Expr.NumberFunctions.Constant)));
-            Assert.AreEqual(expr.Functions.OfType<Expr.NumberFunctions.Constant>().Select(f => f.Value).Sum(), value);
+            Assert.AreEqual(expr.Functions.OfType<Expr.NumberFunctions.Constant>().Aggregate(BigInteger.Zero, (seed, i) => seed + i.Value), value);
         }
 
-        private static void AssertOneDice(Expr.Main expr, int count, int max)
+        private static void AssertOneDice(Expr.Main expr, BigInteger count, BigInteger max)
         {
             Assert.IsNotNull(expr);
             Assert.IsNotNull(expr.Functions);
@@ -65,13 +66,15 @@ namespace DiscordDice.Tests
                 }
             }
 
-            private IEnumerable<(string source, int expected)> ValidOneConstantTestSource()
+            private IEnumerable<(string source, BigInteger expected)> ValidOneConstantTestSource()
             {
                 yield return ("2", 2);
                 yield return ("+2", 2);
                 yield return ("++2", 2);
                 yield return ("-2", -2);
                 yield return ("--2", 2);
+                yield return ("12345678901234567890", BigInteger.Parse("12345678901234567890"));
+                yield return ("-12345678901234567890", BigInteger.Parse("-12345678901234567890"));
             }
 
             [TestMethod]
@@ -102,9 +105,11 @@ namespace DiscordDice.Tests
                 }
             }
 
-            private IEnumerable<(string source, (int expectedCount, int expectedMax))> ValidOneDiceTestSource()
+            private IEnumerable<(string source, (int expectedCount, BigInteger expectedMax))> ValidOneDiceTestSource()
             {
                 yield return ("2d6", (2, 6));
+                yield return ("-2d6", (-2, 6));
+                yield return ("1d12345678901234567890", (1, BigInteger.Parse("12345678901234567890")));
             }
 
             [TestMethod]

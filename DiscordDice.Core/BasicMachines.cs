@@ -329,11 +329,27 @@ namespace DiscordDice.BasicMachines
                     }
                     if (!scan.ScanRolls.Any(s => s.UserID == rollingUserId.ToString()))
                     {
+                        int value;
+                        if(int.TryParse(executedExpr.Value.ToString(), out var v))
+                        {
+                            value = v;
+                        }
+                        else
+                        {
+                            if(executedExpr.Value >= 0)
+                            {
+                                value = int.MaxValue;
+                            }
+                            else
+                            {
+                                value = int.MinValue;
+                            }
+                        }
                         var scanRoll = new Models.ScanRoll
                         {
                             UserID = rollingUserId.ToString(),
                             ScanID = scan.ID,
-                            Value = executedExpr.Value,
+                            Value = value,
                             ValueTieBreaker = Guid.NewGuid().ToString()
                         };
                         await context.ScanRolls.AddAsync(scanRoll);

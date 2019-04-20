@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -20,12 +21,12 @@ namespace DiscordDice
 
             internal class ConstantToken : IToken
             {
-                public ConstantToken(int value)
+                public ConstantToken(BigInteger value)
                 {
                     Value = value;
                 }
 
-                public int Value { get; }
+                public BigInteger Value { get; }
             }
 
             internal class PlusToken : IToken
@@ -40,14 +41,14 @@ namespace DiscordDice
 
             internal class DieToken : IToken
             {
-                public DieToken(int count, int max)
+                public DieToken(BigInteger count, BigInteger max)
                 {
                     Count = count;
                     Max = max;
                 }
 
-                public int Count { get; }
-                public int Max { get; }
+                public BigInteger Count { get; }
+                public BigInteger Max { get; }
             }
         }
 
@@ -72,8 +73,8 @@ namespace DiscordDice
             {
                 LastType _lastType = LastType.None;
 
-                int _lastNumber; // _lastType == LastType.Number || _lastType == LastType.D || _lastType == LastType.DRight のときのみ使われる
-                int _dCountNumber; // _lastType == LastType.DRight のときのみ使われる
+                BigInteger _lastNumber; // _lastType == LastType.Number || _lastType == LastType.D || _lastType == LastType.DRight のときのみ使われる
+                BigInteger _dCountNumber; // _lastType == LastType.DRight のときのみ使われる
 
                 // 例1: ['6', ' '] の場合、_lastType == LastType.Number かつ _hasSpace == true かつ _hasLineBreak == false
                 // 例2: ['6', '\n'] の場合、_lastType == LastType.Number かつ _hasSpace == false かつ _hasLineBreak == true
@@ -83,6 +84,15 @@ namespace DiscordDice
                 bool _hasLineBreak;
 
                 readonly List<Tokens.IToken> _tokens = new List<Tokens.IToken>();
+
+                static int? TryToInt32(BigInteger i)
+                {
+                    if (int.TryParse(i.ToString(), out var result))
+                    {
+                        return result;
+                    }
+                    return null;
+                }
 
                 public bool TryAddSpace()
                 {
@@ -364,7 +374,7 @@ namespace DiscordDice
             {
                 // 例1: (3, "+1d6(3)") ただし1個目の場合は (3, "1d6(3)")
                 // 例2: (-4, "-1d15(4)")
-                (int, string) Execute();
+                (BigInteger, string) Execute();
 
                 // 例1: "+1d6" ただし1個目の場合は "1d6"
                 // 例2: "-4"
@@ -373,27 +383,47 @@ namespace DiscordDice
 
             internal sealed class Die : IEquatable<Die>, INumberFunction
             {
-                // count は負の値でもいい
-                public Die(int count, int max, bool omitPlusString)
+                // countは負の値でもいい
+                // maxが負のときの変換規則: "xD-y" == "-xDy"
+                public Die(BigInteger count, BigInteger max, bool omitPlusString)
                 {
+                    if (max <= 1) throw new ArgumentOutOfRangeException($"Expected {nameof(max)} <= 1 but {nameof(max)} == {max}");
+
                     Count = count;
                     Max = max;
                     OmitPlusString = omitPlusString;
+                    if(int.TryParse(Count.ToString(), out var countAsInt32))
+                    {
+                        CountAsInt32 = countAsInt32;
+                    }
+                    if (int.TryParse(Max.ToString(), out var maxAsInt32))
+                    {
+                        MaxAsInt32 = maxAsInt32;
+                    }
                 }
 
-                public int Count { get; }
-                public int Max { get; }
+                public BigInteger Count { get; }
+                public int? CountAsInt32 { get; }
+                public BigInteger Max { get; }
+                public int? MaxAsInt32 { get; }
                 public bool OmitPlusString { get; }
 
-                public (int, string) Roll()
+                public (BigInteger, string) Roll()
                 {
-                    var isMinus = Count <= -1;
-                    var count = Math.Abs(Count);
+                    var tooBigErrorMessage = $"{ToString()}(エラー: 大きすぎます)";
 
-                    if (count >= 101 || Max >= 1000000001)
+                    if(CountAsInt32 == null || MaxAsInt32 == null)
                     {
-                        var message = $"{ToString()}(エラー: 大きすぎます)";
-                        return (0, message);
+                        return (0, tooBigErrorMessage);
+                    }
+
+                    var isMinus = CountAsInt32.Value <= -1;
+                    var count = Math.Abs(CountAsInt32.Value);
+                    var max = MaxAsInt32.Value;
+
+                    if (count >= 101 || max >= 1000000001)
+                    {
+                        return (0, tooBigErrorMessage);
                     }
                     if (count == 0)
                     {
@@ -405,7 +435,7 @@ namespace DiscordDice
                     var isFirst = true;
                     foreach (var _ in Enumerable.Repeat(System.Reactive.Unit.Default, count))
                     {
-                        var rolled = Max == 0 ? 0 : Random.Next(1, Max + 1);
+                        var rolled = max == 0 ? 0 : Random.Next(1, max + 1);
                         sum += rolled;
                         if (!isFirst)
                         {
@@ -425,7 +455,7 @@ namespace DiscordDice
                     }
                 }
 
-                (int, string) INumberFunction.Execute()
+                (BigInteger, string) INumberFunction.Execute()
                 {
                     return Roll();
                 }
@@ -442,7 +472,7 @@ namespace DiscordDice
 
                 public override bool Equals(object obj) => Equals(obj as Die);
 
-                public override int GetHashCode() => Max ^ Count ^ OmitPlusString.GetHashCode();
+                public override int GetHashCode() => Max.GetHashCode() ^ Count.GetHashCode() ^ OmitPlusString.GetHashCode();
 
                 public static bool operator ==(Die x, Die y)
                 {
@@ -472,16 +502,16 @@ namespace DiscordDice
 
             internal sealed class Constant : IEquatable<Constant>, INumberFunction
             {
-                public Constant(int value, bool omitPlusString)
+                public Constant(BigInteger value, bool omitPlusString)
                 {
                     Value = value;
                     OmitPlusString = omitPlusString;
                 }
 
-                public int Value { get; }
+                public BigInteger Value { get; }
                 public bool OmitPlusString { get; }
 
-                public (int, string) Execute()
+                public (BigInteger, string) Execute()
                 {
                     var plusString = Value >= 0 && !OmitPlusString ? "+" : "";
                     return (Value, plusString + Value.ToString());
@@ -499,7 +529,7 @@ namespace DiscordDice
 
                 public override bool Equals(object obj) => Equals(obj as Constant);
 
-                public override int GetHashCode() => Value ^ OmitPlusString.GetHashCode();
+                public override int GetHashCode() => Value.GetHashCode() ^ OmitPlusString.GetHashCode();
 
                 public static bool operator ==(Constant x, Constant y)
                 {
@@ -611,7 +641,7 @@ namespace DiscordDice
 
             public sealed class Executed
             {
-                public Executed(Main expr, int value, string message)
+                public Executed(Main expr, BigInteger value, string message)
                 {
                     Expr = expr ?? throw new ArgumentNullException(nameof(expr));
                     Value = value;
@@ -619,7 +649,7 @@ namespace DiscordDice
                 }
 
                 public Main Expr { get; }
-                public int Value { get; }
+                public BigInteger Value { get; }
                 public string Message { get; }
             }
 
@@ -630,7 +660,7 @@ namespace DiscordDice
                     return default;
                 }
 
-                var resultValue = 0;
+                var resultValue = BigInteger.Zero;
                 var resultMessage = new StringBuilder();
                 foreach(var token in Functions)
                 {
@@ -669,25 +699,29 @@ namespace DiscordDice
             // 1d100+1d10+1d100+876 => [ (100, 2), (10, 1) ]
             // 2d100-1d100+1d6 => [ (100, 2), (-100, 1), (6, 1) ]
             // 後者のようなパターンは注意!
-            private IDictionary<int, int> MergeDice()
+            private IDictionary<BigInteger, BigInteger> MergeDice()
             {
                 return
                     (Functions ?? new NumberFunctions.INumberFunction[] { })
                     .OfType<NumberFunctions.Die>()
                     .GroupBy(die => new { Max = die.Max, IsMinus = die.Count < 0 })
-                    .Select(group => new { Key = (group.Key.IsMinus ? -1 : 1) * group.Key.Max, Value = group.Select(die => die.Count).Sum() })
+                    .Select(group => 
+                        new
+                        {
+                            Key = (group.Key.IsMinus ? -1 : 1) * group.Key.Max,
+                            Value = group.Aggregate(BigInteger.Zero, (seed, die) => seed + die.Count)
+                        })
                     .Where(a => a.Value >= 1)
                     .ToDictionary(a => a.Key, a => a.Value);
             }
 
             // 100+1001-1+200d2000 => 1100
-            private int AggregateConstants()
+            private BigInteger AggregateConstants()
             {
                 return
                     (Functions ?? new NumberFunctions.INumberFunction[] { })
                     .OfType<NumberFunctions.Constant>()
-                    .Select(constant => constant.Value)
-                    .Sum();
+                    .Aggregate(BigInteger.Zero, (seed, constant) => seed + constant.Value);
             }
 
             // キーと値が全て一致していたら true を返す。
