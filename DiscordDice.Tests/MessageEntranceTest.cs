@@ -142,6 +142,16 @@ namespace DiscordDice.Tests.Commands
         }
 
         [TestMethod]
+        public async Task RollByFullWidth_NoMentionTest()
+        {
+            ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
+            var (allCommands, testObserver, _) = Init();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("１ｄ１００"), botCurrentUserId);
+            AssertEx.ExactlyOneSay(testObserver.Messages);
+        }
+
+        [TestMethod]
         public async Task Roll_MentionedTest()
         {
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
