@@ -387,7 +387,7 @@ namespace DiscordDice
                 // maxが負のときの変換規則: "xD-y" == "-xDy"
                 public Die(BigInteger count, BigInteger max, bool omitPlusString)
                 {
-                    if (max <= 0) throw new ArgumentOutOfRangeException($"Expected not {nameof(max)} <= 0 but {nameof(max)} == {max}");
+                    if (max <= -1) throw new ArgumentOutOfRangeException($"Expected not {nameof(max)} <= -1 but {nameof(max)} == {max}");
 
                     Count = count;
                     Max = max;
