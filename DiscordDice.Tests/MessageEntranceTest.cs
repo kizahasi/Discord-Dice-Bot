@@ -481,6 +481,24 @@ namespace DiscordDice.Tests.Commands
         }
 
         [TestMethod]
+        public async Task Scan_DiceOption_OneBigRollTest()
+        {
+            ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
+            var (allCommands, testObserver, _) = Init();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start --dice 100000000000000000000+1d100"), botCurrentUserId);
+            AssertEx.ExactlyOneSay(testObserver.Messages);
+            testObserver.Messages.Clear();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("100000000000000000000+1d100"), botCurrentUserId);
+            AssertEx.AllSay(testObserver.Messages, 2);
+            testObserver.Messages.Clear();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end"), botCurrentUserId);
+            AssertEx.ExactlyOneSay(testObserver.Messages);
+        }
+
+        [TestMethod]
         public async Task ScanStart_DuplicateTest()
         {
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;

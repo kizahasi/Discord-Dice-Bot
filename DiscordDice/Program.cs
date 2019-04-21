@@ -48,7 +48,7 @@ namespace DiscordDice
                 ConsoleEx.WriteError(e.Exception.Message);
                 ConsoleEx.WriteError(e.Exception.StackTrace);
                 var aggregateException = e.Exception as AggregateException;
-                if(aggregateException == null)
+                if (aggregateException == null)
                 {
                     return;
                 }
