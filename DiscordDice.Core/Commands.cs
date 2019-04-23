@@ -161,6 +161,10 @@ namespace DiscordDice.Commands
             var text = @"```
 更新履歴
 
+# v0.3.4(beta) - 2019/04/23
+
+- scanができなかった問題を修正
+
 # v0.3.3(beta) - 2019/04/21
 
 - 乱数をメルセンヌツイスタに変更

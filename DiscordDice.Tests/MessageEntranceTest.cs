@@ -499,6 +499,28 @@ namespace DiscordDice.Tests.Commands
         }
 
         [TestMethod]
+        public async Task Scan_TwoUsersTest()
+        {
+            ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
+            var (allCommands, testObserver, _) = Init();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start", TestLazySocketUser.Author), botCurrentUserId);
+            AssertEx.ExactlyOneSay(testObserver.Messages);
+            testObserver.Messages.Clear();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-start", TestLazySocketUser.NonAuthor), botCurrentUserId);
+            AssertEx.ExactlyOneSay(testObserver.Messages);
+            testObserver.Messages.Clear();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end", TestLazySocketUser.Author), botCurrentUserId);
+            AssertEx.ExactlyOneSay(testObserver.Messages);
+            testObserver.Messages.Clear();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateMentionedMessage("scan-end", TestLazySocketUser.NonAuthor), botCurrentUserId);
+            AssertEx.ExactlyOneSay(testObserver.Messages);
+        }
+
+        [TestMethod]
         public async Task ScanStart_DuplicateTest()
         {
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;

@@ -82,13 +82,13 @@ namespace DiscordDice.Tests
         Task<IReadOnlyCollection<ILazySocketUser>> ILazySocketMessage.GetMentionedUsersAsync() => Task.FromResult(MentionedUsers);
 
         /// <summary>ダイス BOT への Mention を含むメッセージを作成します。</summary>
-        public static TestLazySocketMessage CreateMentionedMessage(string context)
+        public static TestLazySocketMessage CreateMentionedMessage(string context, ILazySocketUser author = null)
         {
-            var author = TestLazySocketUser.Author;
+            var _author = author ?? TestLazySocketUser.Author;
             var mentionedUsers = new[] { TestLazySocketUser.MyBot }.ToReadOnly();
             return new TestLazySocketMessage
             {
-                Author = author,
+                Author = _author,
                 Channel = TestLazySocketMessageChannel.Default,
                 Content = $"<@{TestLazySocketUser.MyBot.Id}> {context}",
                 MentionedUsers = mentionedUsers
@@ -96,13 +96,13 @@ namespace DiscordDice.Tests
         }
 
         /// <summary>Mention を含まないメッセージを作成します。</summary>
-        public static TestLazySocketMessage CreateNoMentionMessage(string context)
+        public static TestLazySocketMessage CreateNoMentionMessage(string context, ILazySocketUser author = null)
         {
-            var author = TestLazySocketUser.Author;
+            var _author = author ?? TestLazySocketUser.Author;
             var mentionedUsers = new TestLazySocketUser[] { }.ToReadOnly();
             return new TestLazySocketMessage
             {
-                Author = author,
+                Author = _author,
                 Channel = TestLazySocketMessageChannel.Default,
                 Content = context,
                 MentionedUsers = mentionedUsers
@@ -110,13 +110,13 @@ namespace DiscordDice.Tests
         }
 
         /// <summary>Mention はあるがダイス BOT への Mention は含まれないメッセージを作成します。</summary>
-        public static TestLazySocketMessage CreateNotMentionedMessage(string context)
+        public static TestLazySocketMessage CreateNotMentionedMessage(string context, ILazySocketUser author = null)
         {
-            var author = TestLazySocketUser.Author;
+            var _author = author ?? TestLazySocketUser.Author;
             var mentionedUsers = new[] { TestLazySocketUser.NonAuthor }.ToReadOnly();
             return new TestLazySocketMessage
             {
-                Author = author,
+                Author = _author,
                 Channel = TestLazySocketMessageChannel.Default,
                 Content = $"<@{TestLazySocketUser.NonAuthor.Id}> {context}",
                 MentionedUsers = mentionedUsers
@@ -124,13 +124,13 @@ namespace DiscordDice.Tests
         }
 
         /// <summary>他の BOT による、Mention を含まないメッセージを作成します。</summary>
-        public static TestLazySocketMessage CreateOtherBotMessage(string context)
+        public static TestLazySocketMessage CreateOtherBotMessage(string context, ILazySocketUser author = null)
         {
-            var author = TestLazySocketUser.AnotherBot;
+            var _author = author ?? TestLazySocketUser.AnotherBot;
             var mentionedUsers = new TestLazySocketUser[] { }.ToReadOnly();
             return new TestLazySocketMessage
             {
-                Author = author,
+                Author = _author,
                 Channel = TestLazySocketMessageChannel.Default,
                 Content = $"{context}",
                 MentionedUsers = mentionedUsers

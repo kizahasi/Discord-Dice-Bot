@@ -298,7 +298,7 @@ namespace DiscordDice.BasicMachines
         {
             if (context == null) throw new ArgumentNullException(nameof(context));
 
-            var found = await context.Users.FirstOrDefaultAsync();
+            var found = await context.Users.FirstOrDefaultAsync(u => u.ID == userId.ToString());
             if (found == null)
             {
                 await context.Users.AddAsync(new Models.User { ID = userId.ToString(), Username = username });
