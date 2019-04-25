@@ -154,15 +154,11 @@ namespace DiscordDice
             var client = new DiscordSocketClient();
 
             client.Log += OnLog;
-            client.Ready += () =>
+            var entrance = new MessageEntrance(new LazySocketClient(client), Config.Default);
+            ResponsesSender.Start(entrance.ResponseSent);
+            client.MessageReceived += async message =>
             {
-                var entrance = new MessageEntrance(new LazySocketClient(client), Config.Default);
-                ResponsesSender.Start(entrance.ResponseSent);
-                client.MessageReceived += async message =>
-                {
-                    await entrance.ReceiveMessageAsync(new LazySocketMessage(message), client.CurrentUser.Id);
-                };
-                return Task.CompletedTask;
+                await entrance.ReceiveMessageAsync(new LazySocketMessage(message), client.CurrentUser.Id);
             };
 
             var token = await GetTokenAsync();

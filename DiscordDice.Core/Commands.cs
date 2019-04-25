@@ -161,6 +161,10 @@ namespace DiscordDice.Commands
             var text = @"```
 更新履歴
 
+# v0.3.5(beta) - 2019/04/25
+
+- Discord.NETが切断された後に再接続された際、それ以降ダイスなどの結果が多重に書き込まれることがあった問題を修正
+
 # v0.3.4(beta) - 2019/04/23
 
 - scanができなかった問題を修正
