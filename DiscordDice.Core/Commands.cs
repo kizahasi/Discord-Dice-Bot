@@ -49,11 +49,13 @@ namespace DiscordDice.Commands
 
         public abstract string Body { get; }
 
+        public abstract bool NeedMentioned { get; }
+
         public virtual IReadOnlyCollection<string> BodyAliases { get => null; }
 
         public IEnumerable<string> GetBodies()
         {
-            return 
+            return
                 new[] { Body }
                 .Concat(BodyAliases ?? Enumerable.Empty<string>())
                 .Where(body => body != null);
@@ -73,6 +75,10 @@ namespace DiscordDice.Commands
             {
                 return false;
             }
+            if (NeedMentioned && !command.IsMentioned)
+            {
+                return false;
+            }
             return GetBodies().Contains(command.Body);
         }
 
@@ -85,7 +91,7 @@ namespace DiscordDice.Commands
             var channel = await client.TryGetMessageChannelAsync(channelId);
             var user = await client.TryGetUserAsync(userId);
 
-            if(channel == null || user == null)
+            if (channel == null || user == null)
             {
                 return Response.None;
             }
@@ -106,7 +112,7 @@ namespace DiscordDice.Commands
                 {
                     return await Response.TryCreateCautionAsync(client, Texts.Error.Commands.Options.ContainsNotSupportedOption(pair.Key), channelId, userId) ?? Response.None;
                 }
-                if(!usedCommand.Add(found))
+                if (!usedCommand.Add(found))
                 {
                     return await Response.TryCreateCautionAsync(client, "同じ意味のオプションが複数あります。", channelId, userId);
                 }
@@ -120,43 +126,31 @@ namespace DiscordDice.Commands
         }
 
         // null の場合はヘルプに含まれない。
-        public abstract string HelpText { get; }
+        public virtual Help Help { get => null; }
     }
 
-    internal sealed class HelpCommand : Command
+    public sealed class Help
     {
-        public override string Body => "help";
-        public override IReadOnlyCollection<string> BodyAliases => new[] { "-h", "--help" };
-
-        // ここにヘルプメッセージをセットして使う。このような仕様になってしまったのは、「HelpCommand にはヘルプメッセージが必要」と「ヘルプメッセージ作成には全てのコマンドが必要」の循環参照のせい。
-        public Func<string> HelpMessage { get; set; }
-
-        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
+        public Help(string commandName, string text)
         {
-            return await Response.TryCreateSayAsync(client, $"```{HelpMessage()}```", await channel.GetIdAsync());
+            CommandName = commandName ?? throw new ArgumentNullException(nameof(commandName));
+            Text = text ?? throw new ArgumentNullException(nameof(text));
         }
 
-        public override string HelpText => $"{Texts.BotName} のヘルプを表示します。";
+        public string CommandName { get; }
+
+        public string Text { get; }
     }
 
-    internal sealed class VersionCommand : Command
+    internal static class CommandActions
     {
-        public override string Body => "version";
-        public override IReadOnlyCollection<string> BodyAliases => new[] { "-v", "--version" };
+        public static async Task<Response> Help(ILazySocketClient client, ILazySocketMessageChannel channel, string helpMessage)
+            => await Response.TryCreateSayAsync(client, $"{helpMessage}", await channel.GetIdAsync());
 
-        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
-        {
-            return await Response.TryCreateSayAsync(client, $"version {Texts.Version}", await channel.GetIdAsync());
-        }
+        public static async Task<Response> Version(ILazySocketClient client, ILazySocketMessageChannel channel)
+            => await Response.TryCreateSayAsync(client, $"version {Texts.Version}", await channel.GetIdAsync());
 
-        public override string HelpText => $"{Texts.BotName} のバージョンを表示します。";
-    }
-
-    internal sealed class ChangelogCommand : Command
-    {
-        public override string Body => "changelog";
-
-        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
+        public static async Task<Response> Changelog(ILazySocketClient client, ILazySocketMessageChannel channel)
         {
             var text = @"```
 更新履歴
@@ -191,10 +185,85 @@ namespace DiscordDice.Commands
             return await Response.TryCreateSayAsync(client, text, await channel.GetIdAsync());
         }
 
-        public override string HelpText => $"{Texts.BotName} の更新履歴を表示します。";
+
     }
 
-    internal sealed class ScanStartCommand : Command
+    internal sealed class HelpCommand : Command
+    {
+        public override string Body => "!help";
+
+        public override bool NeedMentioned => false;
+
+        // ここにヘルプメッセージをセットして使う。このような仕様になってしまったのは、「HelpCommand にはヘルプメッセージが必要」と「ヘルプメッセージ作成には全てのコマンドが必要」の循環参照のせい。
+        public Func<string> HelpMessage { get; set; }
+
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
+            => await CommandActions.Help(client, channel, HelpMessage());
+
+        public override Help Help => new Help("help", $"{Texts.BotName} のヘルプを表示します。");
+    }
+
+    internal sealed class LegacyHelpCommand : Command
+    {
+        public override string Body => "help";
+        public override IReadOnlyCollection<string> BodyAliases => new[] { "-h", "--help" };
+
+        public override bool NeedMentioned => true;
+
+        // ここにヘルプメッセージをセットして使う。このような仕様になってしまったのは、「HelpCommand にはヘルプメッセージが必要」と「ヘルプメッセージ作成には全てのコマンドが必要」の循環参照のせい。
+        public Func<string> HelpMessage { get; set; }
+
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
+        => await CommandActions.Help(client, channel, HelpMessage());
+    }
+
+    internal sealed class VersionCommand : Command
+    {
+        public override string Body => "!version";
+
+        public override bool NeedMentioned => false;
+
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
+            => await CommandActions.Version(client, channel);
+
+        public override Help Help => new Help("version", $"{Texts.BotName} のバージョンを表示します。");
+    }
+
+    internal sealed class LegacyVersionCommand : Command
+    {
+        public override string Body => "version";
+
+        public override IReadOnlyCollection<string> BodyAliases => new[] { "-v", "--version" };
+
+        public override bool NeedMentioned => true;
+
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
+            => await CommandActions.Version(client, channel);
+    }
+
+    internal sealed class ChangelogCommand : Command
+    {
+        public override string Body => "!changelog";
+
+        public override bool NeedMentioned => false;
+
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
+            => await CommandActions.Changelog(client, channel);
+
+        public override Help Help => new Help("changelog", $"{Texts.BotName} の更新履歴を表示します。");
+    }
+
+    internal sealed class LegacyChangelogCommand : Command
+    {
+        public override string Body => "changelog";
+
+        public override bool NeedMentioned => true;
+
+        protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
+            => await CommandActions.Changelog(client, channel);
+    }
+
+    internal abstract class ScanStartCommandBase : Command
     {
         readonly BasicMachines.ScanMachine _scanMachine;
         readonly DiceOption _diceOption = new DiceOption();
@@ -202,21 +271,12 @@ namespace DiscordDice.Commands
         readonly NoProgressOption _noProgressOption = new NoProgressOption();
         readonly ForceOption _forceOption = new ForceOption();
 
-        public ScanStartCommand(BasicMachines.ScanMachine scanMachine)
+        public ScanStartCommandBase(BasicMachines.ScanMachine scanMachine)
         {
             _scanMachine = scanMachine ?? throw new ArgumentNullException(nameof(scanMachine));
         }
 
-        public override string Body => "scan-start";
-
         public override IReadOnlyCollection<CommandOption> Options => new CommandOption[] { _diceOption, _maxSizeOption, _noProgressOption, _forceOption };
-
-        public override string HelpText => @"次に scan-end コマンドが実行されるまでに振られたダイスを集計します。
-scan-end コマンドは scan-start コマンドを実行したユーザーと同一の人物が実行します。
-指定されたダイスのみが集計されます。
-同じユーザーが指定されたダイスを 2 回以上振った場合、最初に振られたダイスのみが集計対象となります。
-ダイスの値が同じユーザーが複数いる場合、乱数によって自動的にタイブレークが行われます。
-scan-end コマンドが実行されないまま長い時間が経過した場合、集計は自動的にキャンセルされます。";
 
         protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
@@ -259,21 +319,50 @@ scan-end コマンドが実行されないまま長い時間が経過した場�
         }
     }
 
-    internal sealed class ScanShowCommand : Command
+    internal sealed class ScanStartCommand : ScanStartCommandBase
+    {
+        public ScanStartCommand(BasicMachines.ScanMachine scanMachine) : base(scanMachine)
+        {
+            
+        }
+
+        public override string Body => "!scan-start";
+
+        public override bool NeedMentioned => false;
+
+        private static readonly string helpText = @"次に scan-end コマンドが実行されるまでに振られたダイスを集計します。
+scan-end コマンドは scan-start コマンドを実行したユーザーと同一の人物が実行します。
+指定されたダイスのみが集計されます。
+同じユーザーが指定されたダイスを 2 回以上振った場合、最初に振られたダイスのみが集計対象となります。
+ダイスの値が同じユーザーが複数いる場合、乱数によって自動的にタイブレークが行われます。
+scan-end コマンドが実行されないまま長い時間が経過した場合、集計は自動的にキャンセルされます。";
+
+        public override Help Help => new Help("scan-start", helpText);
+    }
+
+    internal sealed class LegacyScanStartCommand : ScanStartCommandBase
+    {
+        public LegacyScanStartCommand(BasicMachines.ScanMachine scanMachine) : base(scanMachine)
+        {
+
+        }
+
+        public override string Body => "scan-start";
+
+        public override bool NeedMentioned => true;
+    }
+
+    internal abstract class ScanShowCommandBase : Command
     {
         readonly BasicMachines.ScanMachine _scanMachine;
         readonly ShuffledOption _shuffledOption = new ShuffledOption();
 
-        public ScanShowCommand(BasicMachines.ScanMachine scanMachine)
+        public ScanShowCommandBase(BasicMachines.ScanMachine scanMachine)
         {
             _scanMachine = scanMachine ?? throw new ArgumentNullException(nameof(scanMachine));
         }
 
-        public override string Body => "scan-show";
-
         public override IReadOnlyCollection<CommandOption> Options => new CommandOption[] { _shuffledOption };
-
-        public override string HelpText => "自身が行っているもしくは行ったダイスの集計の途中経過を表示します。";
 
         protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
@@ -283,27 +372,49 @@ scan-end コマンドが実行されないまま長い時間が経過した場�
 
         sealed class ShuffledOption : CommandOptionWithNoValue
         {
-            public override IReadOnlyCollection<string> Keys => new[] { "--shuffled" };
+            public override IReadOnlyCollection<string> Keys => new[] { "--shuffle", "--shuffled" };
 
             public override string OptionInstructionHelpText => "シャッフルした状態で表示。BOT内部に保存されている集計データそのものはシャッフルされません。";
         }
     }
 
-    internal sealed class ScanEndCommand : Command
+    internal sealed class ScanShowCommand : ScanShowCommandBase
+    {
+        public ScanShowCommand(BasicMachines.ScanMachine scanMachine) : base(scanMachine)
+        {
+
+        }
+
+        public override string Body => "!scan-show";
+
+        public override bool NeedMentioned => false;
+
+        public override Help Help => new Help("scan-show", "自身が行っているもしくは行ったダイスの集計の途中経過を表示します。");
+    }
+
+    internal sealed class LegacyScanShowCommand : ScanShowCommandBase
+    {
+        public LegacyScanShowCommand(BasicMachines.ScanMachine scanMachine) : base(scanMachine)
+        {
+
+        }
+
+        public override string Body => "scan-show";
+
+        public override bool NeedMentioned => true;
+    }
+
+    internal abstract class ScanEndCommandBase : Command
     {
         readonly BasicMachines.ScanMachine _scanMachine;
         readonly NoResultOption _noResultOption = new NoResultOption();
 
-        public ScanEndCommand(BasicMachines.ScanMachine scanMachine)
+        public ScanEndCommandBase(BasicMachines.ScanMachine scanMachine)
         {
             _scanMachine = scanMachine ?? throw new ArgumentNullException(nameof(scanMachine));
         }
 
-        public override string Body => "scan-end";
-
         public override IReadOnlyCollection<CommandOption> Options => new CommandOption[] { _noResultOption };
-
-        public override string HelpText => @"自身が行っているダイスの集計を終了します。";
 
         protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
@@ -326,5 +437,31 @@ scan-end コマンドが実行されないまま長い時間が経過した場�
 
             public override string OptionInstructionHelpText => "集計結果を表示しない。";
         }
+    }
+
+    internal sealed class ScanEndCommand : ScanEndCommandBase
+    {
+        public ScanEndCommand(BasicMachines.ScanMachine scanMachine) : base(scanMachine)
+        {
+
+        }
+
+        public override string Body => "!scan-end";
+
+        public override bool NeedMentioned => false;
+
+        public override Help Help => new Help("scan-end", @"自身が行っているダイスの集計を終了します。");
+    }
+
+    internal sealed class LegacyScanEndCommand : ScanEndCommandBase
+    {
+        public LegacyScanEndCommand(BasicMachines.ScanMachine scanMachine) : base(scanMachine)
+        {
+
+        }
+
+        public override string Body => "scan-end";
+
+        public override bool NeedMentioned => true;
     }
 }

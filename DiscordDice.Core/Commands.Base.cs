@@ -18,13 +18,18 @@ namespace DiscordDice.Commands
         }
 
         public string Body { get; private set; }
+
         // オプションの値がないときは null。
         public IReadOnlyDictionary<string, string> Options { get; private set; }
+
+        public bool HasMentions { get; private set; }
+
+        public bool IsMentioned { get; private set; }
 
         // 引数の例1: ["command", "-a", "-b", "param"]
         // 引数の例2: ["--help", "-a"]
         // "@DiceBot" や "<@1234567890>" のような部分は取り除いて渡す
-        public static Result<RawCommand, string> Create(IEnumerable<string> phrases)
+        public static Result<RawCommand, string> Create(IEnumerable<string> phrases, bool hasMentions, bool isMentioned)
         {
             if (phrases == null)
             {
@@ -35,7 +40,7 @@ namespace DiscordDice.Commands
                 phrases
                 .Where(phrase => phrase != null)
                 .Where(phrase => !string.IsNullOrWhiteSpace(phrase))
-                .Select((phrase, i) => (phrase, i));
+                .Select((phrase, index) => (phrase, index));
 
             // ["command", "-a", "-b", "param"] の場合、body == "command", options == [ ("-a", null), ("-b", "param") ] になる。
             // ["--help", "-a"] の場合、body == "--help", options == [ ("-a", null) ] になる。
@@ -80,11 +85,13 @@ namespace DiscordDice.Commands
             {
                 return Result<RawCommand, string>.CreateError("コマンドがありません。");
             }
-            return Result<RawCommand, string>.CreateValue(new RawCommand { Body = body, Options = options.ToReadOnly() });
+            return Result<RawCommand, string>.CreateValue(new RawCommand { Body = body, Options = options.ToReadOnly(), HasMentions = hasMentions, IsMentioned = isMentioned });
         }
 
         private static Regex CreateRegex(ulong botCurrentUserId)
         {
+            // 楽をするため、@Dicebotの前の文は考慮していない。
+            // 例えば「--deathbattle @Yggdrasil @Dicebot」のような文は「?<command>」は空とみなされる。
             return new Regex($@"^\s*<@\!?(?<id>{botCurrentUserId})>(?<command>.*)$");
         }
 
@@ -94,30 +101,40 @@ namespace DiscordDice.Commands
             if (message == null) throw new ArgumentNullException(nameof(message));
 
             var isMentioned = false;
-            await
-                (await message.GetMentionedUsersAsync())
-                .ToAsyncEnumerable()
-                .ForEachAsync(user =>
+            var mentionedUsers = await message.GetMentionedUsersAsync();
+            foreach (var mentionedUser in mentionedUsers)
+            {
+                // @everyone や @here では MentionedUsers に各ユーザーの ID は含まれないようなので、このような単純な処理で OK
+                if (await mentionedUser.GetIdAsync() == botCurrentUserId)
                 {
-                    // @everyone や @here では MentionedUsers に各ユーザーの ID は含まれないようなので、このような単純な処理で OK
-                    if (user.GetIdAsync().Result == botCurrentUserId)
-                    {
-                        isMentioned = true;
-                    }
-                });
-            if (!isMentioned)
+                    isMentioned = true;
+                }
+            }
+            if (isMentioned && mentionedUsers.Count >= 2)
             {
                 return null;
+            }
+            if (!isMentioned && mentionedUsers.Count >= 1)
+            {
+                return null;
+            }
+            if (!isMentioned)
+            {
+                var phrases = (await message.GetContentAsync()).Split(new char[] { '\r', '\n', ' ' });
+                return Create(phrases, mentionedUsers.Any(), false);
             }
 
             var m = CreateRegex(botCurrentUserId).Match(await message.GetContentAsync());
             if (!m.Success)
             {
-                return Result<RawCommand, string>.CreateError("コマンドがありません。");
+                //return Result<RawCommand, string>.CreateError("コマンドがありません。");
+                return null;
             }
             var command = m.Groups["command"].Value;
-            var phrases = command.Split(new char[] { '\r', '\n', ' ' });
-            return Create(phrases);
+            {
+                var phrases = command.Split(new char[] { '\r', '\n', ' ' });
+                return Create(phrases, mentionedUsers.Any(), true);
+            }
         }
     }
 

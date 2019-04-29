@@ -10,32 +10,25 @@ namespace DiscordDice.Commands
         public static string Create(IReadOnlyCollection<Command> commands)
         {
             var resultBuilder = new StringBuilder();
-            resultBuilder.Append($@"DiceBot ヘルプ
+            resultBuilder.Append($@"**DiceBotのヘルプ**
 
-# このヘルプの表記について
-複数行にわたっているコマンドは、どの行のコマンドも同じ意味であるということを示します。
-スペースの部分は 1 個以上の「半角スペース」で記述してください。
+**# ダイスの振り方**
+例えば下のように書き込むことでダイスを振ることができます。
+`1d6`
+`2d100`
+`-1d20`
+`1d4-2d10+10`
+
+**# コマンド一覧**
 [ と ] で囲まれた部分はオプションです。オプションは省略可能であり、順不同です。
-<n> は自然数を示します。
-<@DiceBot> は BOT へのメンションを示します。
-
-
-コマンド:
-<n>d<n>
-<@DiceBot> <n>d<n>
-
-説明:
-ダイスを振ることができます。前の数字はダイスの個数を、後の数字はダイスの面の数を示します。
-
-例:
-2d100");
+");
 
             foreach (var command in commands)
             {
                 var commandText = ToString(command);
                 if (commandText != null)
                 {
-                    resultBuilder.Append($"\r\n\r\n\r\n{commandText}");
+                    resultBuilder.Append($"\r\n{commandText}");
                 }
             }
 
@@ -44,16 +37,20 @@ namespace DiscordDice.Commands
 
         private static string ToString(Command command)
         {
-            if (command.HelpText == null)
+            if (command.Help == null)
             {
                 return null;
             }
 
-            var resultBuilder = new StringBuilder("コマンド:");
+            var resultBuilder = new StringBuilder($"{command.Help.CommandName}コマンド\r\n```");
 
-            foreach (var body in command.GetBodies())
             {
-                resultBuilder.Append($"\r\n<@DiceBot> {body}");
+                var isFirst = true;
+                foreach (var body in command.GetBodies())
+                {
+                    resultBuilder.Append($"{(isFirst ? "" : "\r\n")}{(command.NeedMentioned ? "<@DiceBot> " : "")}{body}");
+                    isFirst = false;
+                }
             }
 
             foreach (var option in command.Options ?? new CommandOption[] { })
@@ -93,7 +90,7 @@ namespace DiscordDice.Commands
                 resultBuilder.Append("]");
             }
 
-            resultBuilder.Append($"\r\n\r\n説明:\r\n{command.HelpText}");
+            resultBuilder.Append($"\r\n\r\n説明:\r\n{command.Help.Text}");
 
             {
                 var isFirst = true;
@@ -114,6 +111,7 @@ namespace DiscordDice.Commands
                 }
             }
 
+            resultBuilder.Append("```");
             return resultBuilder.ToString();
         }
     }
