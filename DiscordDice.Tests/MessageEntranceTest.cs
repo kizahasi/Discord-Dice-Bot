@@ -113,23 +113,40 @@ namespace DiscordDice.Tests.Commands
         [TestMethod]
         public async Task Plain_NoMentionTest()
         {
+            var texts = new[] { "hello", "a a", "a\r\na" };
+            foreach(var text in texts)
+            {
+                await Plain_NoMentionTestCore(text);
+            }
+        }
+
+        async Task Plain_NoMentionTestCore(string text)
+        {
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("hello"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage(text), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
 
         [TestMethod]
         public async Task Plain_NotMentionedTest()
         {
+            var texts = new[] { "hello", "a a", "a\r\na" };
+            foreach (var text in texts)
+            {
+                await Plain_NotMentionedTestCore(text);
+            }
+        }
+
+        async Task Plain_NotMentionedTestCore(string text)
+        {
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
             var (allCommands, testObserver, _) = Init();
 
-            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNotMentionedMessage("hello"), botCurrentUserId);
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNotMentionedMessage(text), botCurrentUserId);
             AssertEx.IsEmpty(testObserver.Messages);
         }
-
 
         [TestMethod]
         public async Task Roll_NoMentionTest()
