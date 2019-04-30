@@ -24,12 +24,13 @@ namespace DiscordDice
                     public static readonly string OptionIsNotSupported = "このコマンドでオプションを指定することはできません。";
                     public static string ContainsNotSupportedOption(string notSupportedOptionKey) => $"{notSupportedOptionKey} オプションはサポートされていません。";
                     public static string ValueIsNotSupported(string optionKey) => $"{optionKey} オプションには値を付けることはできません。";
+                    public static string MultipleValues(string optionKey) => $"{optionKey} オプションの値が2個以上ありますが、2個以上指定することはできません。";
                     public static string NotFoundValue(string optionKey) => $"{optionKey} オプションは値が必要です。";
                     public static string InvalidValue(string optionKey, string optionValue) => $"{optionKey} オプションの値として {optionValue} が使われましたが、サポートされていない形式です。";
                 }
             }
         }
 
-        public static readonly string Version = "0.3.6(beta)";
+        public static readonly string Version = "0.3.7(beta)";
     }
 }

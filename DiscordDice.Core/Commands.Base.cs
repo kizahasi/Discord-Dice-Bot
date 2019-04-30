@@ -17,10 +17,25 @@ namespace DiscordDice.Commands
 
         }
 
-        public string Body { get; private set; }
+        public string Body { get => Bodies.Count == 1 ? Bodies[0] : null; }
 
-        // オプションの値がないときは null。
-        public IReadOnlyDictionary<string, string> Options { get; private set; }
+        // non-null
+        public IReadOnlyList<string> Bodies { get; private set; }
+
+        // non-null
+        // nameとvaluesとvaluesの要素も全てnon-null
+        public IReadOnlyList<(string name, IReadOnlyList<string> values)> Options { get; private set; }
+
+        // 重複しているオプションがあるときはtrue、全て独立しているときはfalse
+        public bool HasDuplicateOption
+        {
+            get => Options.Select(o => o.name).Distinct().Count() != Options.Count;
+        }
+
+        public bool HasMultipleOptionValue
+        {
+            get => Options.Any(o => o.values.Count >= 2);
+        }
 
         public bool HasMentions { get; private set; }
 
@@ -29,63 +44,77 @@ namespace DiscordDice.Commands
         // 引数の例1: ["command", "-a", "-b", "param"]
         // 引数の例2: ["--help", "-a"]
         // "@DiceBot" や "<@1234567890>" のような部分は取り除いて渡す
-        public static Result<RawCommand, string> Create(IEnumerable<string> phrases, bool hasMentions, bool isMentioned)
+        public static RawCommand Create(IEnumerable<string> phrases, bool hasMentions, bool isMentioned)
         {
-            if (phrases == null)
-            {
-                return Result<RawCommand, string>.CreateError("コマンドがありません。");
-            }
+            if (phrases == null) throw new ArgumentNullException(nameof(phrases));
 
-            var indexedCleanPhrases =
+            var cleanPhrases =
                 phrases
                 .Where(phrase => phrase != null)
-                .Where(phrase => !string.IsNullOrWhiteSpace(phrase))
-                .Select((phrase, index) => (phrase, index));
+                .Where(phrase => !string.IsNullOrWhiteSpace(phrase));
 
-            // ["command", "-a", "-b", "param"] の場合、body == "command", options == [ ("-a", null), ("-b", "param") ] になる。
-            // ["--help", "-a"] の場合、body == "--help", options == [ ("-a", null) ] になる。
-            // 同じ名前のオプションが複数ある場合、もしくは 1 つのオプションに対してパラメーターが複数ある場合はエラーとみなす。
-            string body = null;
-            var options = new Dictionary<string, string>();
-            string readingOptionName = null;
-            foreach (var (phrase, i) in indexedCleanPhrases)
+            /*
++----------------------------------------+----------------+-----------------------------------+
+| input(phrases)                         | output(bodies) | output(options)                   |
++========================================+================+===================================+
+| ["command"]                            | ["command"]    | []                                |
++----------------------------------------+----------------+-----------------------------------+
+| ["a", "b"]                             | ["a", "b"]     | []                                |
++----------------------------------------+----------------+-----------------------------------+
+| []                                     | []             | []                                |
++----------------------------------------+----------------+-----------------------------------+
+| ["-a"]                                 | ["-a"]         | []                                |
++----------------------------------------+----------------+-----------------------------------+
+| ["--help", "-a"]                       | ["--help"]     | [ ("-a", []) ]                    |
++----------------------------------------+----------------+-----------------------------------+
+| ["a", "b", "-a"]                       | ["a", "b"]     | [ ("-a", []) ]                    |
++----------------------------------------+----------------+-----------------------------------+
+| ["command", "-a", "-b", "param"]       | ["command"]    | [ ("-a", []), ("-b", ["param"]) ] |
++----------------------------------------+----------------+-----------------------------------+
+| ["command", "-a", "param0" , "param1"] | ["command"]    | [ ("-a", ["param0", "param1"]) ]  |
++----------------------------------------+----------------+-----------------------------------+
+            */
+            var isFirst = true;
+            var bodies = new List<string>();
+            var options = new List<(string name, IReadOnlyList<string> values)>();
+            string lastOptionName = null;
+            var lastOptionValues = new List<string>();
+            foreach (var phrase in cleanPhrases)
             {
-                if (i == 0)
+                if (isFirst)
                 {
-                    body = phrase;
+                    bodies.Add(phrase);
+                    isFirst = false;
                     continue;
                 }
 
                 if (phrase.FirstOrDefault() == '-')
                 {
-                    if (options.ContainsKey(phrase))
+                    if (lastOptionName == null)
                     {
-                        return Result<RawCommand, string>.CreateError("重複しているオプションがあります。");
+                        lastOptionName = phrase;
+                        continue;
                     }
 
-                    options[phrase] = null;
-                    readingOptionName = phrase;
+                    options.Add((lastOptionName, lastOptionValues.ToReadOnly()));
+                    lastOptionName = phrase;
+                    lastOptionValues = new List<string>();
                     continue;
                 }
 
-                if (readingOptionName == null)
+                if (lastOptionName == null)
                 {
-                    return Result<RawCommand, string>.CreateError("オプションの値がありますが、それに対応するオプションがありません。");
+                    bodies.Add(phrase);
+                    continue;
                 }
-
-                if (options.TryGetValue(readingOptionName, out var optionValue) && optionValue != null)
-                {
-                    return Result<RawCommand, string>.CreateError("オプションの値を複数個指定することはできません。");
-
-                }
-                options[readingOptionName] = phrase;
+                lastOptionValues.Add(phrase);
             }
-
-            if (body == null)
+            if (lastOptionName != null)
             {
-                return Result<RawCommand, string>.CreateError("コマンドがありません。");
+                options.Add((lastOptionName, lastOptionValues.ToReadOnly()));
             }
-            return Result<RawCommand, string>.CreateValue(new RawCommand { Body = body, Options = options.ToReadOnly(), HasMentions = hasMentions, IsMentioned = isMentioned });
+
+            return new RawCommand { Bodies = bodies.ToReadOnly(), Options = options.ToReadOnly(), HasMentions = hasMentions, IsMentioned = isMentioned };
         }
 
         private static Regex CreateRegex(ulong botCurrentUserId)
@@ -96,7 +125,7 @@ namespace DiscordDice.Commands
         }
 
         // 失敗だがエラーメッセージをユーザーに伝える必要がない場合は null を返す。
-        public static async Task<Result<RawCommand, string>> CreateFromSocketMessageOrDefaultAsync(ILazySocketMessage message, ulong botCurrentUserId)
+        public static async Task<RawCommand> CreateFromSocketMessageOrDefaultAsync(ILazySocketMessage message, ulong botCurrentUserId)
         {
             if (message == null) throw new ArgumentNullException(nameof(message));
 
@@ -159,9 +188,8 @@ namespace DiscordDice.Commands
         // セットする Value は、継承先にそれぞれ設ける。理由は、Value の型に制約を持たせたくないのと、Value を持たないケースがあるから。
         // このため、SetValue は副作用があることが多い。インスタンスを不必要に使いまわさないよう注意。
         //
-        // オプションの値がないときは optionValue == null。
         // デフォルトのエラーメッセージを用いたエラーにしたい場合は Result.CreateError(null) を返す。
-        public abstract Result<Unit, string> SetValue(string optionValue, string rawKey);
+        public abstract Result<Unit, string> SetValue(string rawKey, IReadOnlyList<string> optionValues);
 
         public abstract string OptionInstructionHelpText { get; }
         public virtual string OptionValueHelpText { get => null; }
@@ -172,9 +200,9 @@ namespace DiscordDice.Commands
     {
         public bool HasOption { get; private set; }
 
-        public sealed override Result<Unit, string> SetValue(string rawKey, string optionValue)
+        public sealed override Result<Unit, string> SetValue(string rawKey, IReadOnlyList<string> optionValues)
         {
-            if (optionValue != null)
+            if (optionValues.Any())
             {
                 return Result<Unit, string>.CreateError(Texts.Error.Commands.Options.ValueIsNotSupported(rawKey));
             }
@@ -190,12 +218,18 @@ namespace DiscordDice.Commands
     {
         public Expr.Main Value { get; private set; }
 
-        public sealed override Result<Unit, string> SetValue(string rawKey, string optionValue)
+        public sealed override Result<Unit, string> SetValue(string rawKey, IReadOnlyList<string> optionValues)
         {
-            if (optionValue == null)
+            if (optionValues.Count == 0)
             {
                 return Result<Unit, string>.CreateError(Texts.Error.Commands.Options.NotFoundValue(rawKey));
             }
+            if (optionValues.Count >= 2)
+            {
+                return Result<Unit, string>.CreateError(Texts.Error.Commands.Options.MultipleValues(rawKey));
+            }
+            var optionValue = optionValues.First();
+
             var d = Expr.Main.Interpret(optionValue);
             if (!d.IsValid)
             {
@@ -212,12 +246,18 @@ namespace DiscordDice.Commands
     {
         public int? Value { get; private set; }
 
-        public sealed override Result<Unit, string> SetValue(string rawKey, string optionValue)
+        public sealed override Result<Unit, string> SetValue(string rawKey, IReadOnlyList<string> optionValues)
         {
-            if (optionValue == null)
+            if (optionValues.Count == 0)
             {
                 return Result<Unit, string>.CreateError(Texts.Error.Commands.Options.NotFoundValue(rawKey));
             }
+            if (optionValues.Count >= 2)
+            {
+                return Result<Unit, string>.CreateError(Texts.Error.Commands.Options.MultipleValues(rawKey));
+            }
+            var optionValue = optionValues.First();
+
             if (int.TryParse(optionValue, out var parsedOptionValue) && parsedOptionValue >= 0)
             {
                 Value = parsedOptionValue;

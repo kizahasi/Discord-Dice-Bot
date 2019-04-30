@@ -104,22 +104,26 @@ namespace DiscordDice.Commands
                 return Response.None;
             }
 
+            if (command.HasDuplicateOption)
+            {
+                return await Response.TryCreateCautionAsync(client, "同名のオプションが複数あります。", channelId, userId);
+            }
             var usedCommand = new HashSet<CommandOption>(new RefereneEqualsEqualityComparer<CommandOption>());
             foreach (var pair in command.Options)
             {
-                var found = (Options ?? new CommandOption[] { }).FirstOrDefault(option => option.Keys.Contains(pair.Key));
+                var found = (Options ?? new CommandOption[] { }).FirstOrDefault(option => option.Keys.Contains(pair.name));
                 if (found == null)
                 {
-                    return await Response.TryCreateCautionAsync(client, Texts.Error.Commands.Options.ContainsNotSupportedOption(pair.Key), channelId, userId) ?? Response.None;
+                    return await Response.TryCreateCautionAsync(client, Texts.Error.Commands.Options.ContainsNotSupportedOption(pair.name), channelId, userId) ?? Response.None;
                 }
                 if (!usedCommand.Add(found))
                 {
                     return await Response.TryCreateCautionAsync(client, "同じ意味のオプションが複数あります。", channelId, userId);
                 }
-                var result = found.SetValue(pair.Key, pair.Value);
+                var result = found.SetValue(pair.name, pair.values);
                 if (!result.HasValue)
                 {
-                    return await Response.TryCreateCautionAsync(client, result.Error ?? $"{pair.Key} の値としてサポートしていない形式が使われています。", channelId, userId);
+                    return await Response.TryCreateCautionAsync(client, result.Error ?? $"{pair.name} の値としてサポートしていない形式が使われています。", channelId, userId);
                 }
             }
             return await InvokeCoreAsync(client, channel, user) ?? Response.None;
@@ -155,7 +159,7 @@ namespace DiscordDice.Commands
             var text = @"```
 更新履歴
 
-# v0.3.6(beta) - 2019/04/30
+# v0.3.7(beta) - 2019/04/30
 
 - メモリリークが起こっていたと思われる部分を修正
 - メンションなしでも、例えば!scan-startのように!を最初につけることでもコマンドが実行できるようになった

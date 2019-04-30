@@ -106,27 +106,21 @@ namespace DiscordDice
             }
 
             var rawCommand = await RawCommand.CreateFromSocketMessageOrDefaultAsync(message, botCurrentUserId);
-            if (rawCommand == null)
+            if (rawCommand == null || rawCommand.Body == null)
+            {
+                return;
+            }
+
+            if (rawCommand.HasMentions && !rawCommand.IsMentioned)
             {
                 return;
             }
 
             var channel = await message.GetChannelAsync();
-            if (!rawCommand.HasValue)
-            {
-                var response = await Response.TryCreateCautionAsync(_client, rawCommand.Error, await channel.GetIdAsync(), await author.GetIdAsync()) ?? Response.None;
-                _manualResponseSent.OnNext(response);
-                return;
-            }
-            if (rawCommand.Value.HasMentions && !rawCommand.Value.IsMentioned)
-            {
-                return;
-            }
-
             var allCommands = CreateAllCommands();
-            if (allCommands.TryGetValue(rawCommand.Value.Body, out var command))
+            if (allCommands.TryGetValue(rawCommand.Body, out var command))
             {
-                _manualResponseSent.OnNext(await command.InvokeAsync(rawCommand.Value, _client, await channel.GetIdAsync(), await author.GetIdAsync()));
+                _manualResponseSent.OnNext(await command.InvokeAsync(rawCommand, _client, await channel.GetIdAsync(), await author.GetIdAsync()));
                 return;
             }
             //{
