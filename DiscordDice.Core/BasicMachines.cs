@@ -138,10 +138,10 @@ namespace DiscordDice.BasicMachines
             {
                 case RespondType.TochuuKeika:
                 case RespondType.Show:
-                    infoText = "(途中経過)";
+                    infoText = value.IsArchived ? "(終了)" : "(途中経過)";
                     break;
                 case RespondType.ShuffledShow:
-                    infoText = "(途中経過: 一時的なシャッフル)";
+                    infoText = value.IsArchived ? "(終了: 一時的なシャッフル)" : "(途中経過: 一時的なシャッフル)";
                     break;
                 default:
                     infoText = "";
