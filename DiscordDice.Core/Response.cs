@@ -82,7 +82,7 @@ namespace DiscordDice
     // API 制限をなるべく緩和しつつ投稿するクラス
     public sealed class ResponsesSender
     {
-        readonly TimeSpan _bufferTime = TimeSpan.FromSeconds(1.5);
+        readonly TimeSpan _bufferTime = TimeSpan.FromSeconds(3);
         // API制限に引っかかったときに次に投稿を試みるまでの時間を示すが、現在のコードだと最大で _bufferTime の誤差が生じることがある
         readonly TimeSpan _retryTime = TimeSpan.FromSeconds(30);
 
