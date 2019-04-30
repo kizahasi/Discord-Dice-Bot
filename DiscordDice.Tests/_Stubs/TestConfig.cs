@@ -19,7 +19,6 @@ namespace DiscordDice.Tests
         {
             get
             {
-
                 var dataSource = "main-test.sqlite";
                 return new SqliteConnectionStringBuilder { DataSource = dataSource }.ToString();
             }
