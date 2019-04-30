@@ -37,17 +37,25 @@ namespace DiscordDice
         private IDictionary<string, Command> CreateAllCommands()
         {
             var helpCommand = new HelpCommand();
+            var legacyHelpCommand = new LegacyHelpCommand();
             var allCommandsByArray =
                 new Command[]
                 {
                     helpCommand,
+                    legacyHelpCommand,
                     new VersionCommand(),
+                    new LegacyVersionCommand(),
                     new ChangelogCommand(),
+                    new LegacyChangelogCommand(),
                     new ScanStartCommand(_basicMachines.Scan),
+                    new LegacyScanStartCommand(_basicMachines.Scan),
                     new ScanShowCommand(_basicMachines.Scan),
+                    new LegacyScanShowCommand(_basicMachines.Scan),
                     new ScanEndCommand(_basicMachines.Scan),
+                    new LegacyScanEndCommand(_basicMachines.Scan),
                 };
             helpCommand.HelpMessage = () => CommandsHelp.Create(allCommandsByArray);
+            legacyHelpCommand.HelpMessage = () => CommandsHelp.Create(allCommandsByArray);
             return
                 allCommandsByArray
                 .SelectMany(command => command.GetBodies().Select(body => new { Key = body, Value = command }))
@@ -110,6 +118,10 @@ namespace DiscordDice
                 _manualResponseSent.OnNext(response);
                 return;
             }
+            if (rawCommand.Value.HasMentions && !rawCommand.Value.IsMentioned)
+            {
+                return;
+            }
 
             var allCommands = CreateAllCommands();
             if (allCommands.TryGetValue(rawCommand.Value.Body, out var command))
@@ -117,10 +129,10 @@ namespace DiscordDice
                 _manualResponseSent.OnNext(await command.InvokeAsync(rawCommand.Value, _client, await channel.GetIdAsync(), await author.GetIdAsync()));
                 return;
             }
-            {
-                var response = await Response.TryCreateCautionAsync(_client, Texts.Error.Commands.NotFound(rawCommand.Value.Body), await channel.GetIdAsync(), await author.GetIdAsync()) ?? Response.None;
-                _manualResponseSent.OnNext(response);
-            }
+            //{
+            //    var response = await Response.TryCreateCautionAsync(_client, Texts.Error.Commands.NotFound(rawCommand.Value.Body), await channel.GetIdAsync(), await author.GetIdAsync()) ?? Response.None;
+            //    _manualResponseSent.OnNext(response);
+            //}
         }
     }
 }

@@ -20,25 +20,12 @@ namespace DiscordDice
 
     public sealed class Response
     {
-        private readonly Subject<RateLimitedResponse> rateLimitedResponses = new Subject<RateLimitedResponse>();
-
         private Response(ResponseType type, string message, ILazySocketMessageChannel channel, ILazySocketUser replyTo = null)
         {
             Type = type;
             Message = message;
             Channel = channel;
             ReplyTo = replyTo;
-
-            SubscribeRateLimitedResponses(rateLimitedResponses);
-        }
-
-        private static void SubscribeRateLimitedResponses(IObservable<RateLimitedResponse> source)
-        {
-            if (source == null) throw new ArgumentNullException(nameof(source));
-
-            source
-                .Delay(TimeSpan.FromMinutes(Random.Next(2, 6)))
-                .Subscribe();
         }
 
         public ResponseType Type { get; }
@@ -90,24 +77,12 @@ namespace DiscordDice
             if (client == null) throw new ArgumentNullException(nameof(client));
             return await TryCreateAsync(ResponseType.Caution, client, message, channelId, userIdOfReplyTo);
         }
-
-        private class RateLimitedResponse
-        {
-            public RateLimitedResponse(Response response, DateTimeOffset rateLimitedOn)
-            {
-                Response = response ?? throw new ArgumentNullException(nameof(response));
-                RateLimitedOn = rateLimitedOn;
-            }
-
-            public Response Response { get; set; }
-            public DateTimeOffset RateLimitedOn { get; set; }
-        }
     }
 
     // API 制限をなるべく緩和しつつ投稿するクラス
     public sealed class ResponsesSender
     {
-        readonly TimeSpan _bufferTime = TimeSpan.FromSeconds(3);
+        readonly TimeSpan _bufferTime = TimeSpan.FromSeconds(1.5);
         // API制限に引っかかったときに次に投稿を試みるまでの時間を示すが、現在のコードだと最大で _bufferTime の誤差が生じることがある
         readonly TimeSpan _retryTime = TimeSpan.FromSeconds(30);
 
@@ -130,7 +105,6 @@ namespace DiscordDice
                     {
                         await AddCacheAsync(r);
                     }
-
 
                     foreach (var pair in _cache.ToArray())
                     {
