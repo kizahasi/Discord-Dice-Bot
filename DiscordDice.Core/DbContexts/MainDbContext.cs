@@ -33,7 +33,7 @@ namespace DiscordDice
             modelBuilder
                 .Entity<Models.Scan>()
                 .Property(e => e.Expr)
-                .HasConversion(v => v.ToString(), s => Expr.Main.Interpret(s));
+                .HasConversion(v => v.ToString(), s => Expr.Main.Interpret(s).Value);
             modelBuilder
                 .Entity<Models.Scan>()
                 .Property(e => e.StartedAt)

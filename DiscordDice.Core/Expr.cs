@@ -578,11 +578,15 @@ namespace DiscordDice
                 return new Regex($@"^\s*<@\!?(?<id>{botCurrentUserId})>(?<body>.*)$");
             }
 
-            public static async Task<Main> InterpretFromLazySocketMessageAsync(ILazySocketMessage message, ulong botCurrentUserId)
+            public static async Task<Result<Main, string>> InterpretFromLazySocketMessageAsync(ILazySocketMessage message, ulong botCurrentUserId)
             {
                 var content = await message.GetContentAsync();
                 var nonMentionedCode = Interpret(content);
-                if (nonMentionedCode.IsValid)
+                if (!nonMentionedCode.HasValue)
+                {
+                    return nonMentionedCode;
+                }
+                if (nonMentionedCode.Value.IsValid)
                 {
                     return nonMentionedCode;
                 }
@@ -591,23 +595,47 @@ namespace DiscordDice
                 var m = regex.Match(content);
                 if (!m.Success)
                 {
-                    return Invalid;
+                    return Result<Main, string>.CreateValue(Invalid);
                 }
                 var body = m.Groups["body"].Value;
                 return Interpret(body);
             }
 
-            public static Main Interpret(string text)
+            private static bool IsTooLong(IReadOnlyList<Tokens.IToken> tokens)
+            {
+                if (tokens == null) throw new ArgumentNullException(nameof(tokens));
+
+                return
+                    tokens
+                    .Where(token =>
+                    {
+                        switch (token)
+                        {
+                            case Tokens.PlusToken _:
+                            case Tokens.MinusToken _:
+                                return false;
+                        }
+                        return true;
+                    })
+                    .Count()
+                    >= 51;
+            }
+
+            public static Result<Main, string> Interpret(string text)
             {
                 if (text == null)
                 {
-                    return Invalid;
+                    return Result<Main, string>.CreateValue(Invalid);
                 }
 
                 var tokens = Interpreter.ToTokens(text);
                 if (tokens == null)
                 {
-                    return Invalid;
+                    return Result<Main, string>.CreateValue(Invalid);
+                }
+                if (IsTooLong(tokens))
+                {
+                    return Result<Main, string>.CreateError("式が長すぎます。");
                 }
 
                 var result = new List<NumberFunctions.INumberFunction>();
@@ -634,7 +662,7 @@ namespace DiscordDice
                             continue;
                     }
                 }
-                return Create(result.ToReadOnly());
+                return Result<Main, string>.CreateValue(Create(result.ToReadOnly()));
             }
 
             public bool IsValid { get => Functions != null && Functions.Count != 0; }

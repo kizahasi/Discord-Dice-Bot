@@ -47,29 +47,44 @@ namespace DiscordDice
 
         public static Response None { get; } = new Response(ResponseType.None, null, null, null);
 
+        private static Response TryCreate(ResponseType type, string message, ILazySocketMessageChannel channel, ILazySocketUser replyTo = null)
+        {
+            if (message.Length >= 1500) // Discordの文字上限は2000文字(2019/05/02現在)
+            {
+                return new Response(ResponseType.Caution, "文字列が長すぎるため、結果を返せませんでした。", channel, replyTo);
+            }
+            return new Response(type, message, channel, replyTo);
+        }
+
         private static async Task<Response> TryCreateAsync(ResponseType type, ILazySocketClient client, string message, ulong channelId, ulong? userIdOfReplyTo = null)
         {
             var channel = await client.TryGetMessageChannelAsync(channelId);
-            if(channel == null)
+            if (userIdOfReplyTo == null)
+            {
+                return TryCreate(type, message, channel);
+            }
+            var replyTo = await client.TryGetUserAsync(userIdOfReplyTo.Value);
+            if (replyTo == null)
             {
                 return null;
             }
-            if(userIdOfReplyTo == null)
-            {
-                return new Response(type, message, channel);
-            }
-            var user = await client.TryGetUserAsync(userIdOfReplyTo.Value);
-            if (user == null)
-            {
-                return null;
-            }
-            return new Response(type, message, channel, user);
+            return TryCreate(type, message, channel, replyTo);
+        }
+
+        public static Response TryCreateSay(string message, ILazySocketMessageChannel channel, ILazySocketUser replyTo = null)
+        {
+            return TryCreate(ResponseType.Say, message, channel, replyTo);
         }
 
         public static async Task<Response> TryCreateSayAsync(ILazySocketClient client, string message, ulong channelId, ulong? userIdOfReplyTo = null)
         {
             if (client == null) throw new ArgumentNullException(nameof(client));
             return await TryCreateAsync(ResponseType.Say, client, message, channelId, userIdOfReplyTo);
+        }
+
+        public static Response TryCreateCaution(string message, ILazySocketMessageChannel channel, ILazySocketUser replyTo = null)
+        {
+            return TryCreate(ResponseType.Caution, message, channel, replyTo);
         }
 
         public static async Task<Response> TryCreateCautionAsync(ILazySocketClient client, string message, ulong channelId, ulong? userIdOfReplyTo = null)

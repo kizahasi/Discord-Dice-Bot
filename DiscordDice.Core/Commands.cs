@@ -294,7 +294,7 @@ namespace DiscordDice.Commands
 
         protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
-            var dice = _diceOption.Value ?? Expr.Main.Interpret("1d100");
+            var dice = _diceOption.Value ?? Expr.Main.Interpret("1d100").Value;
             var maxSize = _maxSizeOption.Value ?? int.MaxValue;
             var noProgress = _noProgressOption.HasOption;
             var force = _forceOption.HasOption;
