@@ -102,6 +102,15 @@ namespace DiscordDice
         {
             return !(x == y);
         }
+
+        public override string ToString()
+        {
+            if (HasValue)
+            {
+                return $"Value: {Value?.ToString() ?? "Null"}";
+            }
+            return $"Error: {Error?.ToString() ?? "Null"}";
+        }
     }
 
     // 広範囲で使う拡張メソッドたち

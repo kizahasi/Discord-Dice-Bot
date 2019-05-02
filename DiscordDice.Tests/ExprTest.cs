@@ -62,7 +62,8 @@ namespace DiscordDice.Tests
                 foreach (var source in InvalidStringTestSource())
                 {
                     var expr = Expr.Main.Interpret(source);
-                    AssertInvalid(expr);
+                    Assert.IsTrue(expr.HasValue);
+                    AssertInvalid(expr.Value);
                 }
             }
 
@@ -83,7 +84,8 @@ namespace DiscordDice.Tests
                 foreach ((var source, var expected) in ValidOneConstantTestSource())
                 {
                     var expr = Expr.Main.Interpret(source);
-                    AssertOneConstant(expr, expected);
+                    Assert.IsTrue(expr.HasValue);
+                    AssertOneConstant(expr.Value, expected);
                 }
             }
 
@@ -101,7 +103,8 @@ namespace DiscordDice.Tests
                 foreach ((var source, var expected) in ValidConstantTestSource())
                 {
                     var expr = Expr.Main.Interpret(source);
-                    AssertConstant(expr, expected);
+                    Assert.IsTrue(expr.HasValue);
+                    AssertConstant(expr.Value, expected);
                 }
             }
 
@@ -118,7 +121,8 @@ namespace DiscordDice.Tests
                 foreach ((var source, (var expectedCount, var expectedMax)) in ValidOneDiceTestSource())
                 {
                     var expr = Expr.Main.Interpret(source);
-                    AssertOneDice(expr, expectedCount, expectedMax);
+                    Assert.IsTrue(expr.HasValue);
+                    AssertOneDice(expr.Value, expectedCount, expectedMax);
                 }
             }
         }
@@ -142,7 +146,8 @@ namespace DiscordDice.Tests
                 {
                     var m = TestLazySocketMessage.CreateNoMentionMessage(source);
                     var expr = await Expr.Main.InterpretFromLazySocketMessageAsync(m, TestLazySocketUser.MyBot.Id);
-                    AssertOneConstant(expr, expected);
+                    Assert.IsTrue(expr.HasValue);
+                    AssertOneConstant(expr.Value, expected);
                 }
             }
 
@@ -153,7 +158,8 @@ namespace DiscordDice.Tests
                 {
                     var m = TestLazySocketMessage.CreateMentionedMessage(source);
                     var expr = await Expr.Main.InterpretFromLazySocketMessageAsync(m, TestLazySocketUser.MyBot.Id);
-                    AssertOneConstant(expr, expected);
+                    Assert.IsTrue(expr.HasValue);
+                    AssertOneConstant(expr.Value, expected);
                 }
             }
 
@@ -172,7 +178,8 @@ namespace DiscordDice.Tests
                 {
                     var m = TestLazySocketMessage.CreateNoMentionMessage(source);
                     var expr = await Expr.Main.InterpretFromLazySocketMessageAsync(m, TestLazySocketUser.MyBot.Id);
-                    AssertConstant(expr, expected);
+                    Assert.IsTrue(expr.HasValue);
+                    AssertConstant(expr.Value, expected);
                 }
             }
 
@@ -183,7 +190,8 @@ namespace DiscordDice.Tests
                 {
                     var m = TestLazySocketMessage.CreateMentionedMessage(source);
                     var expr = await Expr.Main.InterpretFromLazySocketMessageAsync(m, TestLazySocketUser.MyBot.Id);
-                    AssertConstant(expr, expected);
+                    Assert.IsTrue(expr.HasValue);
+                    AssertConstant(expr.Value, expected);
                 }
             }
 
@@ -200,11 +208,11 @@ namespace DiscordDice.Tests
                 {
                     var m = TestLazySocketMessage.CreateNoMentionMessage(source);
                     var expr = await Expr.Main.InterpretFromLazySocketMessageAsync(m, TestLazySocketUser.MyBot.Id);
-                    AssertInvalid(expr);
+                    Assert.IsTrue(expr.HasValue);
+                    AssertInvalid(expr.Value);
                 }
             }
 
-            
             [TestMethod]
             public async Task InvalidString_MentionedTest()
             {
@@ -212,7 +220,8 @@ namespace DiscordDice.Tests
                 {
                     var m = TestLazySocketMessage.CreateMentionedMessage(source);
                     var expr = await Expr.Main.InterpretFromLazySocketMessageAsync(m, TestLazySocketUser.MyBot.Id);
-                    AssertInvalid(expr);
+                    Assert.IsTrue(expr.HasValue);
+                    AssertInvalid(expr.Value);
                 }
             }
         }
@@ -238,8 +247,10 @@ namespace DiscordDice.Tests
                 {
                     var xCode = Expr.Main.Interpret(x);
                     var yCode = Expr.Main.Interpret(y);
-                    Assert.IsTrue(Expr.Main.AreEquivalent(xCode, yCode));
-                    Assert.IsTrue(Expr.Main.AreEquivalent(yCode, xCode));
+                    Assert.IsTrue(xCode.HasValue);
+                    Assert.IsTrue(yCode.HasValue);
+                    Assert.IsTrue(Expr.Main.AreEquivalent(xCode.Value, yCode.Value));
+                    Assert.IsTrue(Expr.Main.AreEquivalent(yCode.Value, xCode.Value));
                 }
             }
 
@@ -258,8 +269,10 @@ namespace DiscordDice.Tests
                 {
                     var xCode = Expr.Main.Interpret(x);
                     var yCode = Expr.Main.Interpret(y);
-                    Assert.IsFalse(Expr.Main.AreEquivalent(xCode, yCode));
-                    Assert.IsFalse(Expr.Main.AreEquivalent(yCode, xCode));
+                    Assert.IsTrue(xCode.HasValue);
+                    Assert.IsTrue(yCode.HasValue);
+                    Assert.IsFalse(Expr.Main.AreEquivalent(xCode.Value, yCode.Value));
+                    Assert.IsFalse(Expr.Main.AreEquivalent(yCode.Value, xCode.Value));
                 }
             }
         }
@@ -283,9 +296,11 @@ namespace DiscordDice.Tests
                 foreach (var text in EquivalentTestSource())
                 {
                     var xCode = Expr.Main.Interpret(text);
-                    var yCode = Expr.Main.Interpret(xCode.ToString());
-                    Assert.IsTrue(Expr.Main.AreEquivalent(xCode, yCode));
-                    Assert.IsTrue(Expr.Main.AreEquivalent(yCode, xCode));
+                    Assert.IsTrue(xCode.HasValue);
+                    var yCode = Expr.Main.Interpret(xCode.Value.ToString());
+                    Assert.IsTrue(yCode.HasValue);
+                    Assert.IsTrue(Expr.Main.AreEquivalent(xCode.Value, yCode.Value));
+                    Assert.IsTrue(Expr.Main.AreEquivalent(yCode.Value, xCode.Value));
                 }
             }
         }

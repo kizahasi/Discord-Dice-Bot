@@ -229,6 +229,16 @@ namespace DiscordDice.Tests.Commands
         }
 
         [TestMethod]
+        public async Task Roll_TooLongExprTest()
+        {
+            ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
+            var (allCommands, testObserver, _) = Init();
+
+            await allCommands.ReceiveMessageAsync(TestLazySocketMessage.CreateNoMentionMessage("2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6+2d6"), botCurrentUserId);
+            AssertEx.ExactlyOneCaution(testObserver.Messages);
+        }
+
+        [TestMethod]
         public async Task Roll_MentionedTest()
         {
             ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;

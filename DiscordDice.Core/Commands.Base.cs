@@ -231,11 +231,11 @@ namespace DiscordDice.Commands
             var optionValue = optionValues.First();
 
             var d = Expr.Main.Interpret(optionValue);
-            if (!d.IsValid)
+            if (!d.HasValue || !d.Value.IsValid)
             {
                 return Result<Unit, string>.CreateError(Texts.Error.Commands.Options.InvalidValue(rawKey, optionValue));
             }
-            Value = d;
+            Value = d.Value;
             return Result<Unit, string>.CreateValue(Unit.Default);
         }
 

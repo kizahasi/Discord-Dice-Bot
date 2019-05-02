@@ -68,16 +68,23 @@ namespace DiscordDice
         private async Task<(Response result, bool executesCommand)> ProcessNonCommandAsync(ILazySocketMessage message, ulong botCurrentUserId)
         {
             var expr = await Expr.Main.InterpretFromLazySocketMessageAsync(message, botCurrentUserId);
-            var executed = expr.ExecuteOrDefault();
-            if (executed == null || expr.IsConstant)
+            if(!expr.HasValue)
+            {
+                var author = await message.GetAuthorAsync();
+                return (Response.TryCreateCaution(expr.Error, await message.GetChannelAsync(), author), false);
+            }
+            var executed = expr.Value.ExecuteOrDefault();
+            if (executed == null || expr.Value.IsConstant)
             {
                 return (Response.None, true);
             }
-            var channel = await message.GetChannelAsync();
-            var author = await message.GetAuthorAsync();
-            await _basicMachines.Scan.SetDiceAsync(await channel.GetIdAsync(), await author.GetIdAsync(), await author.GetUsernameAsync() , executed);
-            var result = await Response.TryCreateSayAsync(_client, $"{await author.GetMentionAsync()} {executed.Message}", await channel.GetIdAsync()) ?? Response.None;
-            return (result, false);
+            {
+                var channel = await message.GetChannelAsync();
+                var author = await message.GetAuthorAsync();
+                await _basicMachines.Scan.SetDiceAsync(await channel.GetIdAsync(), await author.GetIdAsync(), await author.GetUsernameAsync(), executed);
+                var result = await Response.TryCreateSayAsync(_client, $"{await author.GetMentionAsync()} {executed.Message}", await channel.GetIdAsync()) ?? Response.None;
+                return (result, false);
+            }
         }
 
         public async Task ReceiveMessageAsync(ILazySocketMessage message, ulong botCurrentUserId)

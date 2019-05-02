@@ -159,6 +159,10 @@ namespace DiscordDice.Commands
             var text = @"```
 更新履歴
 
+# v0.3.9(beta) - 2019/05/02
+
+- 足し算や引き算の回数が非常に多い式を投稿した際、BOT内部でエラーを出していた問題を修正
+
 # v0.3.8(beta) - 2019/05/01
 
 - 終了後のscanを!scan-showした場合にも""途中経過""と表示されてしまっていた問題を修正
@@ -294,7 +298,7 @@ namespace DiscordDice.Commands
 
         protected override async Task<Response> InvokeCoreAsync(ILazySocketClient client, ILazySocketMessageChannel channel, ILazySocketUser user)
         {
-            var dice = _diceOption.Value ?? Expr.Main.Interpret("1d100");
+            var dice = _diceOption.Value ?? Expr.Main.Interpret("1d100").Value;
             var maxSize = _maxSizeOption.Value ?? int.MaxValue;
             var noProgress = _noProgressOption.HasOption;
             var force = _forceOption.HasOption;
