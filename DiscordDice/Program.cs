@@ -66,37 +66,14 @@ namespace DiscordDice
                     ?.AsEnumerable()
                     ?? Enumerable.Empty<Exception>())
                     .All(ex => ex is WebSocketException);
-                if (areExceptionsOk)
+                if (!areExceptionsOk)
                 {
-                    e.SetObserved();
+                    ConsoleEx.WriteError("Stopping bot...(Make sure \"Restart\" and \"RestartSec\" are set at service file of systemctl)");
+                    throw e.Exception;
                 }
             };
 
-            await MainLoop();
-        }
-
-        static async Task MainLoop()
-        {
-            try
-            {
-                await ConnectDiscordAsync();
-            }
-            catch (AggregateException e)
-            {
-                foreach (var exception in e.InnerExceptions)
-                {
-                    ConsoleEx.WriteError(e.Message);
-                }
-            }
-            catch (Exception e)
-            {
-                ConsoleEx.WriteError(e.Message);
-            }
-            Console.WriteLine("Errors have occured. Run again after 10 min...");
-
-            await Task.Delay(10 * 60 * 1000);
-
-            await MainLoop();
+            await ConnectDiscordAsync();
         }
 
         public static async Task<string> GetTokenAsync()
