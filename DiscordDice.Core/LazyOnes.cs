@@ -187,7 +187,7 @@ namespace DiscordDice
             var channel = _client.GetChannel(channelId) as ISocketMessageChannel;
             if (channel == null)
             {
-                return null;
+                return Task.FromResult<ILazySocketMessageChannel>(null);
             }
             ILazySocketMessageChannel result = new LazySocketMessageChannel(channel);
             return Task.FromResult(result);
@@ -198,7 +198,7 @@ namespace DiscordDice
             var user = _client.GetUser(userId);
             if (user == null)
             {
-                return null;
+                return Task.FromResult<ILazySocketUser>(null);
             }
             ILazySocketUser result = new LazySocketUser(user);
             return Task.FromResult(result);
