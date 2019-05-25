@@ -715,6 +715,49 @@ namespace DiscordDice.Tests.Commands
         }
 
         [TestMethod]
+        public async Task Scan_TieBreakTest()
+        {
+            var message0 = TestLazySocketMessage.CreateNoMentionMessage("!scan-start --dice 1d1", TestLazySocketUser.Author);
+            var message1 = TestLazySocketMessage.CreateNoMentionMessage("1d1", TestLazySocketUser.Author);
+            var message2 = TestLazySocketMessage.CreateNoMentionMessage("1d1", TestLazySocketUser.NonAuthor);
+            var message3 = TestLazySocketMessage.CreateNoMentionMessage("!scan-end");
+
+            await Scan_TieBreakTestCore(message0, message1, message2, message3);
+        }
+
+        [TestMethod]
+        public async Task LegacyScan_TieBreakTest()
+        {
+            var message0 = TestLazySocketMessage.CreateMentionedMessage("scan-start --dice 1d1", TestLazySocketUser.Author);
+            var message1 = TestLazySocketMessage.CreateNoMentionMessage("1d1", TestLazySocketUser.Author);
+            var message2 = TestLazySocketMessage.CreateNoMentionMessage("1d1", TestLazySocketUser.NonAuthor);
+            var message3 = TestLazySocketMessage.CreateMentionedMessage("scan-end");
+
+            await Scan_TieBreakTestCore(message0, message1, message2, message3);
+        }
+
+        async Task Scan_TieBreakTestCore(TestLazySocketMessage message0, TestLazySocketMessage message1, TestLazySocketMessage message2, TestLazySocketMessage message3)
+        {
+            ulong botCurrentUserId = TestLazySocketUser.MyBot.Id;
+            var (allCommands, testObserver, _) = Init();
+
+            await allCommands.ReceiveMessageAsync(message0, botCurrentUserId);
+            AssertEx.ExactlyOneSay(testObserver.Messages);
+            testObserver.Messages.Clear();
+
+            await allCommands.ReceiveMessageAsync(message1, botCurrentUserId);
+            AssertEx.AllSay(testObserver.Messages, 2);
+            testObserver.Messages.Clear();
+
+            await allCommands.ReceiveMessageAsync(message2, botCurrentUserId);
+            AssertEx.AllSay(testObserver.Messages, 2);
+            testObserver.Messages.Clear();
+
+            await allCommands.ReceiveMessageAsync(message3, botCurrentUserId);
+            AssertEx.ExactlyOneSay(testObserver.Messages);
+        }
+
+        [TestMethod]
         public async Task Scan_TwoUsersTest()
         {
             var message0 = TestLazySocketMessage.CreateNoMentionMessage("!scan-start", TestLazySocketUser.Author);
