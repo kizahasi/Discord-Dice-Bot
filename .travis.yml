@@ -1,0 +1,9 @@
+language: csharp
+solution: DiscordDice.sln
+
+branches:
+  only:
+    - master
+
+notifications:
+  email: false

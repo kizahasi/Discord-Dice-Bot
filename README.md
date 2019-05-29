@@ -3,12 +3,14 @@
 
 ![image](https://github.com/rasis-aneki/Discord-Dice-Bot/blob/storage/images/roll+scan.gif)
 
+[![Build Status](https://travis-ci.org/rasis-aneki/Discord-Dice-Bot.svg?branch=master)](https://travis-ci.org/rasis-aneki/Discord-Dice-Bot)
+
 ## BOTユーザーを自分のDiscordサーバーに追加する
 このダイスBOTは無料サーバーで稼働させており、Discordサーバー管理者なら誰でも追加することができるようになっています。
 
 BOTユーザーを追加するには、下のリンクをクリックしてください。
 
-[ダイスBOTをDiscordサーバーに追加する](https://discordapp.com/oauth2/authorize?&client_id=389035105227767817&scope=bot)
+[**ダイスBOTをDiscordサーバーに追加する**](https://discordapp.com/oauth2/authorize?&client_id=389035105227767817&scope=bot)
 
 ## コマンド
 [マニュアル](https://github.com/rasis-aneki/Discord-Dice-Bot/blob/storage/manual.md)を参照してください。
