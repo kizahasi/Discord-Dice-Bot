@@ -159,7 +159,11 @@ namespace DiscordDice.Commands
             var text = @"```
 更新履歴
 
-# v0.3.10(beta) - 2019/05/02
+# v0.3.11(beta) - 2019/05/30
+
+- 使用しているライブラリを更新
+
+# v0.3.10(beta) - 2019/05/18
 
 - (開発者にのみ影響がある修正)
 
@@ -203,6 +207,7 @@ namespace DiscordDice.Commands
 - 全角文字を含むダイスロールをサポート
 - Scanが削除されるまでの時間を30分から2時間に延長
 - BOTの止まる頻度がおそらく低下
+- 使用しているライブラリを更新
 ```";
             return await Response.TryCreateSayAsync(client, text, await channel.GetIdAsync());
         }
