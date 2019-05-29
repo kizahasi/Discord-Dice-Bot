@@ -1,5 +1,11 @@
 language: csharp
 solution: DiscordDice.sln
+mono: none
+dotnet: 2.1.700
+
+script:
+  - dotnet restore
+  - dotnet test
 
 branches:
   only:
