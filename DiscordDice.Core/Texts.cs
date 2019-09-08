@@ -31,6 +31,6 @@ namespace DiscordDice
             }
         }
 
-        public static readonly string Version = "0.3.11(beta)";
+        public static readonly string Version = "1.0.0";
     }
 }
