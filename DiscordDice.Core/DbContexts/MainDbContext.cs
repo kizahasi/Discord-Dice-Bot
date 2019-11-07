@@ -20,7 +20,7 @@ namespace DiscordDice
         {
             base.OnConfiguring(optionsBuilder);
 
-            optionsBuilder.UseSqlite(_config.DatabaseConnectionString);
+            optionsBuilder.UseLoggerFactory(Loggers.ConsoleLogger).UseSqlite(_config.DatabaseConnectionString);
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
